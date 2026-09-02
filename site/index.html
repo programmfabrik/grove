@@ -109,10 +109,10 @@ const REPO = 'programmfabrik/grove'
 const WHAT = {
   'Grove-macos-universal.zip': 'The app, Apple Silicon and Intel in one bundle',
   'Grove-windows-amd64.zip': 'The app on Windows',
-  'grove-macos-universal.tar.gz': 'The command, either Mac',
-  'grove-windows-amd64.zip': 'The command on Windows',
-  'grove-linux-amd64.tar.gz': 'The command on Linux, x86-64',
-  'grove-linux-arm64.tar.gz': 'The command on Linux, ARM',
+  'grove-cli-macos-universal.tar.gz': 'The command, either Mac',
+  'grove-cli-windows-amd64.zip': 'The command on Windows',
+  'grove-cli-linux-amd64.tar.gz': 'The command on Linux, x86-64',
+  'grove-cli-linux-arm64.tar.gz': 'The command on Linux, ARM',
   'SHA256SUMS': 'Checksums for all of the above',
 }
 const FIRST_RUN = {
@@ -137,7 +137,7 @@ function detect() {
 const PREFERRED = {
   mac: 'Grove-macos-universal.zip',
   windows: 'Grove-windows-amd64.zip',
-  linux: 'grove-linux-amd64.tar.gz',
+  linux: 'grove-cli-linux-amd64.tar.gz',
 }
 const LABEL = { mac: 'Download for macOS', windows: 'Download for Windows', linux: 'Download for Linux' }
 

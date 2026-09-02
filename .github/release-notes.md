@@ -4,7 +4,7 @@ The dashboard, as a command and as an application.
 | --- | --- |
 | `Grove-macos-universal.zip` | the app, Apple Silicon and Intel in one bundle |
 | `Grove-windows-amd64.zip` | the app on Windows |
-| `grove-*` | the command, which serves the same dashboard to a browser |
+| `grove-cli-*` | the command, which serves the same dashboard to a browser |
 
 **macOS, first run.** These builds are not signed with a Developer ID, so
 macOS quarantines them on download and refuses to open them. Either install

@@ -59,7 +59,7 @@ jobs:
           # ditto, not zip: a .app is a directory with symlinks and resource
           # forks, and zip(1) flattens things that matter
           ditto -c -k --sequesterRsrc --keepParent bin/Grove.app dist/Grove-macos-universal.zip
-          tar -C bin/cli -czf dist/grove-macos-universal.tar.gz grove
+          tar -C bin/cli -czf dist/grove-cli-macos-universal.tar.gz grove
       # Nothing here should be able to ship a binary for the wrong platform,
       # and the case-insensitive collision above is exactly how that happens.
       - name: check what is actually in them
@@ -99,16 +99,16 @@ jobs:
             ext=""; [ "$os" = windows ] && ext=.exe
             out="bin/cli/$os-$arch"; mkdir -p "$out"
             GOOS=$os GOARCH=$arch go build -ldflags "-X main.version=$VERSION" -o "$out/grove$ext" .
-            if [ "$os" = windows ]; then (cd "$out" && zip -q "$GITHUB_WORKSPACE/dist/grove-$os-$arch.zip" "grove$ext");
-            else tar -C "$out" -czf "dist/grove-$os-$arch.tar.gz" grove; fi
+            if [ "$os" = windows ]; then (cd "$out" && zip -q "$GITHUB_WORKSPACE/dist/grove-cli-$os-$arch.zip" "grove$ext");
+            else tar -C "$out" -czf "dist/grove-cli-$os-$arch.tar.gz" grove; fi
           done
           ls -la dist/
       - name: check what is actually in them
         run: |
           file bin/app/Grove.exe | grep -q "PE32+ executable (GUI)"
-          tar -xzOf dist/grove-linux-arm64.tar.gz grove > /tmp/l && file /tmp/l | grep -q "ELF 64-bit.*ARM aarch64"
-          tar -xzOf dist/grove-linux-amd64.tar.gz grove > /tmp/l && file /tmp/l | grep -q "ELF 64-bit.*x86-64"
-          unzip -p dist/grove-windows-amd64.zip grove.exe > /tmp/w && file /tmp/w | grep -q "PE32+ executable (console)"
+          tar -xzOf dist/grove-cli-linux-arm64.tar.gz grove > /tmp/l && file /tmp/l | grep -q "ELF 64-bit.*ARM aarch64"
+          tar -xzOf dist/grove-cli-linux-amd64.tar.gz grove > /tmp/l && file /tmp/l | grep -q "ELF 64-bit.*x86-64"
+          unzip -p dist/grove-cli-windows-amd64.zip grove.exe > /tmp/w && file /tmp/w | grep -q "PE32+ executable (console)"
           echo "every artifact is for the platform it claims"
       - uses: actions/upload-artifact@v4
         with: { name: cross, path: dist/ }
@@ -121,7 +121,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { path: art }
-      - run: mkdir -p dist && mv art/*/* dist/ && (cd dist && shasum -a 256 * > SHA256SUMS) && cat dist/SHA256SUMS
+      - name: gather, and refuse two names that differ only by case
+        run: |
+          mkdir -p dist && mv art/*/* dist/
+          # GitHub's release assets are one case-insensitive namespace, so
+          # Grove-windows-amd64.zip and grove-windows-amd64.zip are the same
+          # name to it and the second upload is rejected — after the release
+          # has already been created. Catch it here instead.
+          dupes=$(cd dist && ls | tr 'A-Z' 'a-z' | sort | uniq -d)
+          if [ -n "$dupes" ]; then echo "asset names collide case-insensitively: $dupes"; exit 1; fi
+          (cd dist && shasum -a 256 * > SHA256SUMS)
+          cat dist/SHA256SUMS
       - name: publish the release
         env:
           GH_TOKEN: ${{ github.token }}
