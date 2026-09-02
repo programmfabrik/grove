@@ -119,6 +119,8 @@ next to the sha:
 | blue, `not in <base>` | pushed, but the base branch does not have it: the branch you are still working on, told apart from the history it sits on |
 | grey | it has landed in the base branch and is just history now |
 
+![the scope column: a branch two commits ahead, one of them pushed, one not, the rest history](docs/scope.png)
+
 Merged-ness is `git cherry <base> HEAD`, not ancestry: landing work
 elsewhere rewrites shas, and a commit cherry-picked or rebased onto the base
 keeps its patch while losing its identity — ancestry would call it unmerged
@@ -184,7 +186,11 @@ name, branch and last subject, the scope column by subject, sha and
 author (and it holds the two switches above), the files column by path. Each is
 a filter, not a search: it narrows the list already on screen, so it answers as
 fast as you can type and never changes what the scope holds. Closing a filter
-clears its text; the switches keep their setting. The query is whitespace-separated
+clears its text; the switches keep their setting.
+
+![two filters open: "main" on the worktrees, "ui list" on the files, each term in its colour](docs/filters.png)
+
+The query is whitespace-separated
 terms, all of which must match, in any order, case-insensitively, anywhere in
 the path — order-independent because a path is remembered in pieces, and
 `yml workflows` is the same thought as `workflows release`. Matching the whole
@@ -245,6 +251,8 @@ endpoint. A relative image resolves through the blob endpoint at the pane's
 own side, so a screenshot the change added shows on the right and not on the
 left. The last choice is the default for the next file; a file switched on its
 own keeps its choice for the session.
+
+![a README rendered before and after, side by side](docs/markdown.png)
 
 The same marker heads the diff itself. One git command covers every range
 case: the fork point (`git merge-base <base> HEAD`) against the working tree —
