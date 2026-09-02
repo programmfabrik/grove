@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
-import type { Checkout, Repo, State } from './types'
+import type { Checkout, Repo, State, Update } from './types'
 import { RepoList } from './components/RepoList'
 import { WorktreeList } from './components/WorktreeList'
 import { Sidebar } from './components/Sidebar'
 import { Logo } from './components/ui'
+import { UpdateNotice } from './components/UpdateNotice'
 import { fmtAgo } from './lib/format'
 import { clamp, Splitter, useStoredWidth } from './components/Splitter'
 import { PaneFilter, PaneHead, PaneRail, useFolded, useStoredFlag } from './components/Pane'
@@ -25,6 +26,12 @@ export default function App() {
   const wanted = useRef(readUrl())
   const [repos, setRepos] = useState<Repo[] | null>(null)
   const [dir, setDir] = useState('')
+  // asked once, on load. The server does the checking on its own schedule and
+  // answers from what it last learned, so this never waits on the network.
+  const [update, setUpdate] = useState<Update | null>(null)
+  useEffect(() => {
+    api.version().then(setUpdate).catch(() => {})
+  }, [])
   const [repo, setRepo] = useState('')
   const [state, setState] = useState<State | null>(null)
   const [checkout, setCheckout] = useState('')
@@ -166,6 +173,7 @@ export default function App() {
         </div>
 
         <div className="topbar-tools">
+          {update?.available && <UpdateNotice update={update} />}
           <button className="btn-ghost" onClick={refresh} disabled={refreshing}>
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>

@@ -14,9 +14,11 @@ Three panes, each narrowing what the next one shows:
 3. **viewer** — the selected worktree: what is known about it in the head, its
    diff below
 
-grove reads git and nothing else. It never starts, stops or reconfigures
-anything. The single exception is the diff tree's context menu — see
-[Unstage and discard](#unstage-and-discard).
+grove reads git, and it never starts, stops or reconfigures anything. There are
+two exceptions and they are both deliberate: the diff tree's context menu
+writes — see [Unstage and discard](#unstage-and-discard) — and once a day it
+asks GitHub whether there is a newer release, which is the only thing it does
+over the network. See [Updates](#updates).
 
 ## Install
 
@@ -429,6 +431,30 @@ no longer exists — a deleted worktree, a rebased commit — is dropped for the
 pane's own default rather than leaving the page empty. Every list scrolls its
 restored row into view, with `block: 'nearest'` so a row already on screen is
 left where it is and clicking never yanks the list.
+
+## Updates
+
+A tool downloaded once is a tool that stays at the version you downloaded.
+Homebrew can upgrade what it installed and nothing can upgrade a zip, so once a
+day grove asks GitHub what the latest release is, and says so in the top bar if
+it is newer than what is running.
+
+It sends nothing. It is an unauthenticated GET of a public URL with no
+identifier attached — GitHub sees an address and a user agent, exactly as it
+would for anyone opening the releases page. Nothing is downloaded and nothing is
+installed: the answer is a link to the one file that replaces this build, chosen
+for the platform and for whether this is the app or the command. An install
+Homebrew manages is offered `brew upgrade --cask grove` instead, because a
+download beside the managed copy would leave two of them with brew describing
+the wrong one.
+
+`-no-update-check` turns it off, and then grove makes no network request at
+all. A build from a working tree carries no version, so it never checks and
+never nags.
+
+Replacing a running program while somebody is reading a diff is not something a
+dashboard should do, so grove does not: it points at the file and gets out of
+the way.
 
 ## Development
 

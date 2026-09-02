@@ -83,3 +83,14 @@ export type State = {
   git_at: string
   git_error?: string
 }
+
+// what /api/version says: what is running and, if the check is on, what has
+// been released since
+export type Update = {
+  version: string
+  latest?: string
+  available?: boolean
+  url?: string
+  notes_url?: string
+  homebrew?: boolean
+}

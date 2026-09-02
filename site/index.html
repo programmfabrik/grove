@@ -231,7 +231,7 @@ footer a { color: var(--dim); }
 
 <section><div class="wrap">
   <p class="eyebrow">How it works</p>
-  <h2>It reads git, and nothing else</h2>
+  <h2>It reads git, and it tells you the truth about it</h2>
   <p class="lede">Grove never starts, stops or reconfigures anything. It runs the same commands you
      would run yourself, on a loopback port nothing outside the machine can reach, and shows you what
      they said.</p>
@@ -242,6 +242,13 @@ footer a { color: var(--dim); }
     <div class="card"><h3>Lazy and per repo</h3>
       <p>With dozens of repositories, refreshing all of them on a timer would be waste. A repo is
          scanned when a request finds its cache stale.</p></div>
+    <div class="card"><h3>One network request</h3>
+      <p>Once a day it asks GitHub whether a newer release exists, and says so if there is one. No
+         identifier is attached, nothing is downloaded, nothing is installed —
+         <code>-no-update-check</code> turns even that off.</p></div>
+    <div class="card"><h3>Nothing else leaves the machine</h3>
+      <p>No telemetry, no analytics, no account. Your repositories are read where they are and the
+         page is served to you alone.</p></div>
   </div>
 </div></section>
 

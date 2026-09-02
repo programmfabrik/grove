@@ -10,9 +10,12 @@
 //	cd ~/src && grove
 //	cd ~/src/myrepo && grove
 //
-// The dashboard reads git and nothing else. It never starts, stops or
-// reconfigures anything. The single exception is the tree's context menu —
-// unstage and discard, on files in view, behind a confirmation (revert.go).
+// The dashboard reads git, and never starts, stops or reconfigures anything.
+// Two exceptions, both deliberate: the tree's context menu writes — unstage and
+// discard, on files in view, behind a confirmation (revert.go) — and once a day
+// it asks GitHub whether a newer release exists, which is the only thing it
+// does over the network and the only thing -no-update-check turns off
+// (update.go).
 package main
 
 import (
@@ -60,6 +63,8 @@ type grove struct {
 	repos   []Repo
 	reposAt time.Time
 	state   map[string]*repoState // keyed by repo path
+
+	up *updater // nil when -no-update-check said so
 }
 
 func main() {
@@ -72,6 +77,7 @@ func main() {
 	flag.StringVar(&opt.base, "base", "", "branch the checkouts are compared against (default: the branch of the main checkout)")
 	flag.DurationVar(&opt.refresh, "refresh", 20*time.Second, "how often the worktrees are re-scanned with git")
 	showVersion := flag.Bool("version", false, "print the version and exit")
+	noUpdate := flag.Bool("no-update-check", false, "never ask GitHub whether a newer release exists")
 	flag.Parse()
 	if *showVersion {
 		fmt.Printf("grove %s\n", version)
@@ -93,6 +99,10 @@ func main() {
 	opt.dir = dir
 
 	d := &grove{opt: opt, state: map[string]*repoState{}}
+	if !*noUpdate {
+		d.up = newUpdater()
+		go d.up.watch(context.Background())
+	}
 
 	// Everything above is the dashboard; run is the front door, and there are
 	// two of them. The default build serves it to a browser and prints where;
@@ -147,6 +157,7 @@ func (d *grove) routes() http.Handler {
 	mux.HandleFunc("GET /api/diff", d.handleDiff)
 	mux.HandleFunc("GET /api/blob", d.handleBlob)
 	mux.HandleFunc("GET /api/lines", d.handleLines)
+	mux.HandleFunc("GET /api/version", d.handleVersion)
 	mux.HandleFunc("POST /api/refresh", d.handleRefresh)
 	mux.HandleFunc("POST /api/revert", d.handleRevert)
 	mux.Handle("/", uiHandler())
@@ -218,6 +229,17 @@ func (d *grove) handleState(w http.ResponseWriter, r *http.Request) {
 		GitAt:     stamp(st.gitAt),
 		GitError:  st.err,
 	})
+}
+
+// handleVersion says what is running and, if the check is on and found one,
+// what has been released since. It never blocks on the network: the check runs
+// in the background and this reports whatever it last learned.
+func (d *grove) handleVersion(w http.ResponseWriter, r *http.Request) {
+	if d.up == nil {
+		writeJSON(w, http.StatusOK, Update{Version: version})
+		return
+	}
+	writeJSON(w, http.StatusOK, d.up.get())
 }
 
 // handleRefresh drops the caches so the next reads rescan — the UI's explicit

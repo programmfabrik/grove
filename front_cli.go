@@ -16,6 +16,8 @@ import (
 // what `go install github.com/programmfabrik/grove@latest` builds — pure Go,
 // no cgo, no webview, nothing to install first.
 
+func init() { distKind = "cli" }
+
 func run(d *grove, addr string, explicit, open bool) error {
 	// One scan before binding a port: an empty directory is worth reporting
 	// now rather than as an empty first page.

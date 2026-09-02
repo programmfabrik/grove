@@ -1,4 +1,4 @@
-import type { DiffFile, Repo, ScopeRepo, State } from './types'
+import type { DiffFile, Repo, ScopeRepo, State, Update } from './types'
 
 async function j<T>(r: Response): Promise<T> {
   if (!r.ok) {
@@ -76,4 +76,6 @@ export const api = {
       `api/lines?name=${encodeURIComponent(name)}&repo=${encodeURIComponent(repo)}&scope=${encodeURIComponent(scope)}` +
         `&file=${encodeURIComponent(file)}&from=${from}&to=${to}`,
     ).then((r) => j<{ lines: string[]; from: number; total: number }>(r)),
+  // what is running, and whether anything newer was published
+  version: (): Promise<Update> => fetch('api/version').then((r) => j<Update>(r)),
 }

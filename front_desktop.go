@@ -35,6 +35,8 @@ const (
 	desktopPorts = 10
 )
 
+func init() { distKind = "app" }
+
 func run(d *grove, addr string, explicit, _ bool) error {
 	rememberOrRecallDir(d)
 
