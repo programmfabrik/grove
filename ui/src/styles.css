@@ -57,13 +57,48 @@ a { color: var(--accent-ink); }
 .dim { color: var(--dim); }
 .small { font-size: 12px; }
 
+/* ── scrollbars ──────────────────────────────────────────────────────── */
+/* The one place a webview shows through. Left alone these are the system's,
+   which on a Mac set to "always show scroll bars" are wide grey slabs with a
+   track — correct for a document, wrong for a tool, and the first thing that
+   says "this is a web page in a window". Thin, no track, and the colour of the
+   thing they belong to. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--dim) 32%, transparent) transparent;
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb {
+  /* the border plus background-clip is what insets the thumb, so it reads as
+     floating over the content rather than filling a gutter */
+  background: color-mix(in srgb, var(--dim) 32%, transparent);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--dim) 60%, transparent); background-clip: content-box; }
+
 /* ── shell ───────────────────────────────────────────────────────────── */
 /* Header, three panes, footer. The panes fill what is left and scroll
    individually — the window itself never scrolls, so the header and the
    footer are always where you left them. */
-.app { display: flex; flex-direction: column; height: 100vh; }
-.panes { display: flex; flex: 1; min-height: 0; }
-.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: none; }
+/* overflow: hidden is what makes the sentence above true rather than merely
+   intended. A flex item defaults to min-width: auto and will not shrink below
+   its content, so one long line in a diff pushed the whole layout wider than
+   the window and the WINDOW scrolled — sideways, with a scrollbar across the
+   bottom of an application that is not a page. Every horizontal flex box on
+   the way down to the diff says min-width: 0, and the diff scrolls inside
+   itself, which is where scrolling belongs. */
+.app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+.panes { display: flex; flex: 1; min-height: 0; min-width: 0; }
+/* flex: 0 1 auto, not none. The width you dragged a column to is its basis and
+   it never grows past it — but when the window is too narrow to hold them all,
+   a column that REFUSES to shrink does not make the window bigger, it makes
+   the window scroll, and an application that scrolls sideways is a web page in
+   a costume. They give way instead, and fold if you want the room back. */
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 0 1 auto; }
 .pane-grow { flex: 1; }
 .pane-head {
   display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
@@ -208,10 +243,10 @@ a { color: var(--accent-ink); }
 .sb-title { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* below the head: file tree left, diff right, each with its own scroll */
-.sb-split { display: flex; flex: 1; min-height: 0; }
+.sb-split { display: flex; flex: 1; min-height: 0; min-width: 0; }
 /* the two right columns share a header, so they share a wrapper */
 .sb-right { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.sb-right-row { flex: 1; min-height: 0; display: flex; }
+.sb-right-row { flex: 1; min-height: 0; min-width: 0; display: flex; }
 .ch { flex: none; padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--card); }
 .ch-top { display: flex; align-items: baseline; gap: 10px; }
 .ch-title { font-size: 13.5px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
