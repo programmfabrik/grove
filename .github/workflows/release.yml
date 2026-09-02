@@ -143,4 +143,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Casks/grove.rb
           git commit -m "Casks: grove $VERSION" || exit 0
-          git push origin HEAD:main
+          # a tag cut somewhere other than main cannot fast-forward it, and a
+          # published release should not be undone by a cask that would not push
+          git push origin HEAD:main ||
+            echo "::warning::cask not pushed — $VERSION is not on main; update Casks/grove.rb by hand"
