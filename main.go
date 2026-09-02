@@ -24,12 +24,10 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -86,39 +84,48 @@ func main() {
 
 	d := &grove{opt: opt, state: map[string]*repoState{}}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	// One scan before binding a port: an empty directory is worth reporting
-	// now rather than as an empty first page.
-	repos := d.reposList(ctx)
-	if len(repos) == 0 {
-		fmt.Fprintf(os.Stderr, "grove: no git repository in %s — pass -dir\n", dir)
-		os.Exit(1)
-	}
-
-	srv := &http.Server{Handler: d.routes()}
-	ln, err := listen(*addr, fallbackAddr, isSet("addr"))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "grove: cannot listen on %s: %v\n", *addr, err)
-		fmt.Fprintf(os.Stderr, "  something else holds the port. Try -addr %s\n", fallbackAddr)
-		os.Exit(1)
-	}
-	url := dashboardURL(ln)
-	fmt.Printf("grove: %s  —  %d repositories in %s\n", url, len(repos), dir)
-	if *open {
-		go openBrowser(url)
-	}
-
-	go func() {
-		<-ctx.Done()
-		sc, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		srv.Shutdown(sc)
-	}()
-	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+	// Everything above is the dashboard; run is the front door, and there are
+	// two of them. The default build serves it to a browser and prints where;
+	// `-tags desktop` puts it in a window of its own (front_cli.go,
+	// front_desktop.go). Both hold the same *grove and the same routes.
+	if err := run(d, *addr, isSet("addr"), *open); err != nil {
 		fmt.Fprintf(os.Stderr, "grove: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+// dir is the directory the repo list is scanned in. Behind the lock because
+// the desktop front door can point the dashboard somewhere else while it runs.
+func (d *grove) dir() string {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.opt.dir
+}
+
+// setDir points the dashboard at another directory. The caches describe the
+// old one entirely, so all of them go. A directory with nothing in it is
+// refused rather than swapped in: an empty dashboard cannot say why it is
+// empty, and the caller can.
+func (d *grove) setDir(dir string) error {
+	repos := scanRepos(context.Background(), dir)
+	if len(repos) == 0 {
+		return fmt.Errorf("no git repository in %s", dir)
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.opt.dir = dir
+	d.repos, d.reposAt = repos, time.Now()
+	d.state = map[string]*repoState{}
+	return nil
+}
+
+// dropCaches makes the next read rescan everything.
+func (d *grove) dropCaches() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.reposAt = time.Time{}
+	for _, st := range d.state {
+		st.gitAt = time.Time{}
 	}
 }
 
@@ -155,7 +162,7 @@ func (d *grove) reposList(ctx context.Context) []Repo {
 	if fresh {
 		return repos
 	}
-	repos = scanRepos(ctx, d.opt.dir)
+	repos = scanRepos(ctx, d.dir())
 	d.mu.Lock()
 	d.repos, d.reposAt = repos, time.Now()
 	d.mu.Unlock()
@@ -163,7 +170,7 @@ func (d *grove) reposList(ctx context.Context) []Repo {
 }
 
 func (d *grove) handleRepos(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"dir": d.opt.dir, "repos": d.reposList(r.Context())})
+	writeJSON(w, http.StatusOK, map[string]any{"dir": d.dir(), "repos": d.reposList(r.Context())})
 }
 
 // repoStateFor scans a repository's worktrees when its cache has expired.
@@ -206,12 +213,7 @@ func (d *grove) handleState(w http.ResponseWriter, r *http.Request) {
 // handleRefresh drops the caches so the next reads rescan — the UI's explicit
 // refresh button.
 func (d *grove) handleRefresh(w http.ResponseWriter, r *http.Request) {
-	d.mu.Lock()
-	d.reposAt = time.Time{}
-	for _, st := range d.state {
-		st.gitAt = time.Time{}
-	}
-	d.mu.Unlock()
+	d.dropCaches()
 	d.handleState(w, r)
 }
 

@@ -21,11 +21,11 @@ func TestAPIOverARealRepo(t *testing.T) {
 	dir := t.TempDir()
 	repo := initRepo(t, filepath.Join(dir, "myrepo"))
 	write(t, repo, "committed.txt", "one\ntwo\nthree\n")
-	run(t, repo, "add", "committed.txt")
-	run(t, repo, "commit", "-q", "-m", "second")
+	gitRun(t, repo, "add", "committed.txt")
+	gitRun(t, repo, "commit", "-q", "-m", "second")
 	write(t, repo, "committed.txt", "one\ntwo\nCHANGED\n") // unstaged
 	write(t, repo, "staged.txt", "s\n")
-	run(t, repo, "add", "staged.txt")
+	gitRun(t, repo, "add", "staged.txt")
 	write(t, repo, "untracked.txt", "u1\nu2\n") // in no commit and no index
 
 	d := &grove{
@@ -153,7 +153,7 @@ func TestAPIOverARealRepo(t *testing.T) {
 	}
 }
 
-func write(t *testing.T, dir, name, body string) {
+func write(t testing.TB, dir, name, body string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
 		t.Fatal(err)

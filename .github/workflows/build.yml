@@ -19,6 +19,30 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - run: go build ./...
+      # grove is a program that spawns git: ~500 processes per refresh cycle
+      # over a directory of twenty repositories. Windows charges an order of
+      # magnitude more for that than Unix does, and this is where the three
+      # numbers can be read next to each other.
+      - name: git spawn cost
+        run: go test -run '^$' -bench . -benchtime 20x .
+
+  # The window. macOS needs cgo and the platform SDK; Windows needs neither —
+  # Wails v3 loads WebView2 at runtime, so this cross-builds from anywhere.
+  # Linux is not here on purpose: its webview wants cgo and a webkitgtk whose
+  # version differs per distribution, and the CLI serves Linux fine meanwhile.
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet -tags desktop ./...
+      - run: go build -tags desktop ./...
 
   # The UI is built once, where node is cheapest, and checked against the
   # bundle in the tree: ui/dist is committed so `go install` works without npm.

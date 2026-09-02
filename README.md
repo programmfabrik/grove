@@ -56,6 +56,42 @@ for. `-addr :80` restores it for whoever wants it.
 | `-refresh` | `20s` | how often the worktrees are re-scanned |
 | `-open` | off | open the browser once it listens |
 
+## The app
+
+The same dashboard, in a window of its own rather than a browser tab:
+
+```sh
+make app          # bin/grove-app
+make app-windows  # bin/grove-app.exe, cross-built from anywhere
+```
+
+macOS and Windows. Linux gets the command above and a browser for now — its
+webview wants cgo and a webkitgtk whose version differs per distribution, and
+that is a worse trade than a tab.
+
+The window loads `http://127.0.0.1:PORT` rather than being served through the
+webview's own asset scheme, and that is the whole design. The page then sits on
+an ordinary HTTP origin, so everything it already does keeps working: range
+requests, which is how `<video>` in a diff seeks; a secure context, which is
+where `navigator.clipboard` lives; ordinary caching. An asset scheme would have
+put all three in doubt. The cost is that page and window share no JavaScript
+bridge — less of a loss than it sounds, because the page already talks to Go
+over HTTP, and everything native is driven from the Go side.
+
+The port is a stable one (7433, or the next free after it) rather than whatever
+the OS offers. localStorage is keyed by origin, and it is where the pane widths,
+the folds and the theme are kept, so a port that moved every launch would hand
+back an empty dashboard each time.
+
+**File → Open Folder…** points it at another directory of repositories, which
+is what an app needs and a command does not: a command is started in the
+directory it is meant to show, and an app is started from an icon.
+
+Both binaries hold the same server and the same dashboard; only the front door
+differs (`front_cli.go`, `front_desktop.go`). The default build has no window
+code in it at all — no cgo, no webview, not one Wails package — so `go install`
+still produces the plain command.
+
 ## What it discovers, and how
 
 | shown | where it comes from |
@@ -364,6 +400,7 @@ left where it is and clicking never yanks the list.
 ```sh
 make build        # rebuild ui/dist if the UI sources changed, then bin/grove
 make run          # …and start it (ADDR=127.0.0.1:8000 to pick the address)
+make app          # the desktop build instead: bin/grove-app
 make test         # go vet and the tests
 ```
 
@@ -399,6 +436,8 @@ cd ui && npm run dev
 | `preview.go` | `/api/blob` — bytes of a renderable file, at either revision |
 | `revert.go` | `/api/revert` — unstage and discard |
 | `paths.go` | the one spelling a path is kept in — see below |
+| `front_cli.go` | the default front door: serve it and say where it is |
+| `front_desktop.go` | `-tags desktop` — the window, its menu and the folder dialog |
 | `ui.go` | the embedded SPA |
 | `ui/` | vite + React 18 + TypeScript; highlight.js, marked and DOMPurify in lazy chunks |
 | `ui/src/components/Sidebar.tsx` | the checkout's head, and the diff under it |

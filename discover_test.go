@@ -70,7 +70,7 @@ func TestScanFindsMainCheckoutThroughSymlink(t *testing.T) {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 	repo := initRepo(t, filepath.Join(real, "myrepo"))
-	run(t, repo, "worktree", "add", "-q", "-b", "feature", filepath.Join(real, "myrepo2"))
+	gitRun(t, repo, "worktree", "add", "-q", "-b", "feature", filepath.Join(real, "myrepo2"))
 
 	repos := scanRepos(context.Background(), normPath(start))
 	if len(repos) != 1 {
@@ -106,7 +106,7 @@ func TestScanFindsMainCheckoutThroughSymlink(t *testing.T) {
 	}
 }
 
-func requireGit(t *testing.T) {
+func requireGit(t testing.TB) {
 	t.Helper()
 	if err := findGit(); err != nil {
 		t.Skipf("no usable git: %v", err)
@@ -115,26 +115,26 @@ func requireGit(t *testing.T) {
 
 // initRepo makes a repository with one commit on main and returns its path,
 // normalised the way grove holds paths.
-func initRepo(t *testing.T, path string) string {
+func initRepo(t testing.TB, path string) string {
 	t.Helper()
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	run(t, path, "init", "-q")
-	run(t, path, "symbolic-ref", "HEAD", "refs/heads/main") // predates `init -b`
+	gitRun(t, path, "init", "-q")
+	gitRun(t, path, "symbolic-ref", "HEAD", "refs/heads/main") // predates `init -b`
 	// the machine running this may sign commits or have no identity at all
-	run(t, path, "config", "user.email", "grove@example.com")
-	run(t, path, "config", "user.name", "grove")
-	run(t, path, "config", "commit.gpgsign", "false")
+	gitRun(t, path, "config", "user.email", "grove@example.com")
+	gitRun(t, path, "config", "user.name", "grove")
+	gitRun(t, path, "config", "commit.gpgsign", "false")
 	if err := os.WriteFile(filepath.Join(path, "a.txt"), []byte("hi\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	run(t, path, "add", "a.txt")
-	run(t, path, "commit", "-q", "-m", "first")
+	gitRun(t, path, "add", "a.txt")
+	gitRun(t, path, "commit", "-q", "-m", "first")
 	return normPath(path)
 }
 
-func run(t *testing.T, dir string, args ...string) {
+func gitRun(t testing.TB, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command(gitExe, args...)
 	cmd.Dir = dir

@@ -10,15 +10,21 @@ UI_HASH   = find $(UI_DIR)/src $(UI_DIR)/index.html $(UI_DIR)/package-lock.json 
 	$(UI_DIR)/vite.config.ts $(UI_DIR)/tsconfig.json -type f | sort | xargs cat | $(SHA256) | cut -d" " -f1
 ADDR     ?=
 
-.PHONY: ui build run test clean help
+.PHONY: ui build app app-windows run test clean help
 
 ui: ## rebuild ui/dist if the UI sources changed (no-op when current)
 	@want=$$($(UI_HASH)); have=$$(cat $(UI_STAMP) 2>/dev/null || true); \
 	if [ -f $(UI_DIR)/dist/index.html ] && [ "$$want" = "$$have" ]; then exit 0; fi; \
 	( cd $(UI_DIR) && npm ci --no-audit --no-fund && npm run build ) && $(UI_HASH) > $(UI_STAMP)
 
-build: ui ## build bin/grove
+build: ui ## build bin/grove, the command
 	go build -o bin/grove .
+
+app: ui ## build bin/grove-app, the same dashboard in a window of its own
+	go build -tags desktop -o bin/grove-app .
+
+app-windows: ui ## cross-build the Windows app from here (Wails v3 needs no cgo there)
+	GOOS=windows GOARCH=amd64 go build -tags desktop -ldflags "-H=windowsgui" -o bin/grove-app.exe .
 
 run: build ## build and start it (ADDR=127.0.0.1:8000 to pick the address)
 	./bin/grove $(if $(ADDR),-addr $(ADDR))
@@ -26,7 +32,7 @@ run: build ## build and start it (ADDR=127.0.0.1:8000 to pick the address)
 test: ## go vet and the tests (they need git on the path)
 	go vet ./... && go test ./...
 
-clean: ## remove the binary and the UI build stamp (ui/dist stays: it is committed)
+clean: ## remove the binaries and the UI build stamp (ui/dist stays: it is committed)
 	rm -rf bin $(UI_STAMP)
 
 help: ## this list
