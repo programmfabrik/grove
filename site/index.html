@@ -153,7 +153,8 @@ if (fr) {
 }
 
 fetch(`https://api.github.com/repos/${REPO}/releases/latest`)
-  .then((r) => { if (!r.ok) throw new Error(r.status); return r.json() })
+  // 404 here is not a failure, it is the honest answer before the first tag
+  .then((r) => { if (r.status === 404) throw new Error('none'); if (!r.ok) throw new Error(r.status); return r.json() })
   .then((rel) => {
     const assets = rel.assets || []
     const want = assets.find((a) => a.name === PREFERRED[os])
@@ -170,14 +171,21 @@ fetch(`https://api.github.com/repos/${REPO}/releases/latest`)
     document.getElementById('assets').innerHTML =
       rows.join('') || '<tr><td colspan="2" style="color:var(--dim)">No downloads on this release.</td></tr>'
   })
-  .catch(() => {
-    // no release yet, or the API is rate-limiting this address — say so and
-    // send them somewhere that works rather than leaving a dead button
-    btn.textContent = 'Downloads on GitHub'
+  .catch((e) => {
+    // Two different things, and telling somebody the network failed when the
+    // truth is that nothing has been released yet sends them looking in the
+    // wrong place. Either way the button goes somewhere rather than nowhere.
+    const unreleased = e.message === 'none'
+    btn.textContent = unreleased ? 'Build it from source' : 'Downloads on GitHub'
+    btn.href = unreleased
+      ? 'https://github.com/' + REPO + '#install'
+      : 'https://github.com/' + REPO + '/releases'
     btn.removeAttribute('aria-disabled')
-    meta.innerHTML = 'Could not reach the GitHub API just now.'
+    meta.textContent = unreleased
+      ? 'No release published yet — the command below works today.'
+      : 'Could not reach the GitHub API just now.'
     document.getElementById('assets').innerHTML =
-      '<tr><td colspan="2"><a href="https://github.com/' + REPO + '/releases">See all releases on GitHub</a></td></tr>'
+      '<tr><td colspan="2"><a href="https://github.com/' + REPO + '/releases">Releases on GitHub</a></td></tr>'
   })
 </script>
 </body>
