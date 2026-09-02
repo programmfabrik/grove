@@ -44,7 +44,7 @@ func run(d *grove, addr string, explicit, _ bool) error {
 	if err != nil {
 		return err
 	}
-	srv := &http.Server{Handler: d.routes()}
+	srv := &http.Server{Handler: d.routes(loopbackListener(ln))}
 	go srv.Serve(ln)
 	url := dashboardURL(ln)
 

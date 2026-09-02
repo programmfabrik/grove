@@ -38,7 +38,7 @@ func run(d *grove, addr string, explicit, open bool) error {
 		go openBrowser(url)
 	}
 
-	srv := &http.Server{Handler: d.routes()}
+	srv := &http.Server{Handler: d.routes(loopbackListener(ln))}
 	go func() {
 		<-ctx.Done()
 		sc, cancel := context.WithTimeout(context.Background(), 3*time.Second)

@@ -32,7 +32,7 @@ func TestAPIOverARealRepo(t *testing.T) {
 		opt:   options{dir: normPath(dir), refresh: time.Minute},
 		state: map[string]*repoState{},
 	}
-	srv := httptest.NewServer(d.routes())
+	srv := httptest.NewServer(d.routes(true))
 	defer srv.Close()
 
 	get := func(path string, into any) {

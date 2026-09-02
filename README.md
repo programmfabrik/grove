@@ -437,6 +437,42 @@ pane's own default rather than leaving the page empty. Every list scrolls its
 restored row into view, with `block: 'nearest'` so a row already on screen is
 left where it is and clicking never yanks the list.
 
+## What the loopback port is, and is not
+
+grove binds the loopback interface, so nothing outside the machine can reach
+it. That keeps it off the network and does not keep it to your browser: every
+page in every tab can make requests to `127.0.0.1`, and `/api/revert` deletes
+files. Two attacks followed from that, and both worked:
+
+A page on any site could POST to `/api/revert`. Cross-origin JSON would have
+been stopped by the CORS preflight, but `Content-Type: text/plain` makes the
+request "simple" and no preflight is asked for — the browser refuses to show
+the attacker the *response* and sends the request anyway, which is all that is
+needed when the effect is a deletion.
+
+And DNS rebinding: a name the attacker controls, answering first with their own
+address and then with `127.0.0.1`, makes their page same-origin with the
+dashboard and lets it read every repository on the machine. The `Host` header
+is the only thing that tells the two apart, and grove served any.
+
+So `guard.go` asks three questions of every request, in order:
+
+| | |
+| --- | --- |
+| the `Host` | must be a loopback name — a name that resolved here came through DNS, which loopback cannot do |
+| `Sec-Fetch-Site` and `Origin` | set by the browser and unforgeable by the page: a request that says it came from another site is refused. A loopback origin on another port is the vite dev server and is allowed |
+| a write | must carry a per-launch secret, in a `SameSite=Strict` cookie no cross-site context is ever handed, and must be `application/json`, which is not a content type a form can send |
+
+`-addr :80` binds the wildcard deliberately, and then the `Host` and `Origin` of
+a legitimate request are whatever address the browser used, so those two checks
+are dropped rather than refusing the thing the flag exists to allow. The secret
+and the content type still stand.
+
+None of this defends against another program running as you. It cannot: that
+program can read the repositories directly, and grove's endpoints are the long
+way round. What it defends is the browser, which runs code from strangers all
+day long.
+
 ## Updates
 
 A tool downloaded once is a tool that stays at the version you downloaded.

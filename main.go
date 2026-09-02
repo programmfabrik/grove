@@ -149,7 +149,7 @@ func (d *grove) dropCaches() {
 	}
 }
 
-func (d *grove) routes() http.Handler {
+func (d *grove) routes(loopbackOnly bool) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/repos", d.handleRepos)
 	mux.HandleFunc("GET /api/state", d.handleState)
@@ -161,7 +161,10 @@ func (d *grove) routes() http.Handler {
 	mux.HandleFunc("POST /api/refresh", d.handleRefresh)
 	mux.HandleFunc("POST /api/revert", d.handleRevert)
 	mux.Handle("/", uiHandler())
-	return mux
+	// Everything goes through the guard, the page included: the Host check is
+	// what stops a rebound name reading the dashboard, and that is not an /api
+	// concern.
+	return newGuard(mux, loopbackOnly)
 }
 
 // State is one repository's payload — one request per refresh tick.

@@ -76,7 +76,7 @@ func TestAssetNameMatchesTheRelease(t *testing.T) {
 // answers with what is running.
 func TestNoUpdateCheckMakesNoRequest(t *testing.T) {
 	d := &grove{state: map[string]*repoState{}} // up is nil: the flag was given
-	srv := httptest.NewServer(d.routes())
+	srv := httptest.NewServer(d.routes(true))
 	defer srv.Close()
 
 	res, err := http.Get(srv.URL + "/api/version")
