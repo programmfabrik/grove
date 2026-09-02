@@ -260,13 +260,16 @@ footer a { color: var(--dim); }
 
   <div class="box">
     <h3 style="margin-bottom:14px">With Homebrew, on macOS</h3>
-    <p style="color:var(--dim);font-size:14.5px;margin:0">The tidiest way: no quarantine to clear, and
-       <code>brew upgrade</code> keeps it current.</p>
+    <p style="color:var(--dim);font-size:14.5px;margin:0">Four lines, and <code>brew upgrade</code>
+       keeps it current afterwards.</p>
 <pre>brew tap programmfabrik/grove https://github.com/programmfabrik/grove
 brew trust --cask programmfabrik/grove/grove
-brew install --cask grove</pre>
-    <p style="color:var(--dimmer);font-size:13.5px;margin:0">The middle line is not optional — Homebrew
-       refuses a cask from a third-party tap until you say you trust it.</p>
+brew install --cask grove
+xattr -dr com.apple.quarantine /Applications/Grove.app</pre>
+    <p style="color:var(--dimmer);font-size:13.5px;margin:0">Neither of the last two is optional.
+       Homebrew refuses a cask from a third-party tap until you trust it, and it quarantines what it
+       downloads just as a browser does — without the last line the first launch offers to move Grove
+       to the Bin.</p>
 
     <h3 style="margin:30px 0 6px">As a command, anywhere Go runs</h3>
 <pre>go install github.com/programmfabrik/grove@latest
@@ -277,13 +280,16 @@ cd ~/src &amp;&amp; grove          <span class="c"># http://localhost</span></pr
 
     <div class="warn">
       <h3>Opening it the first time</h3>
-      <p>These builds are not signed with a Developer ID, so macOS quarantines them on download and
-         Windows SmartScreen warns about a program it has not seen. Neither says anything about the
-         program; both are the cost of an unsigned build.</p>
-      <p style="margin-top:10px"><b>macOS</b> — after unzipping <code>Grove.app</code> into Applications:</p>
+      <p>These builds are not notarised by Apple, so macOS quarantines them however they arrive —
+         downloaded or installed by Homebrew alike — and Windows SmartScreen warns about a program it
+         has not seen. Neither says anything about the program; both are the cost of an unsigned
+         build, and notarising it is the real fix.</p>
+      <p style="margin-top:10px"><b>macOS</b> — with <code>Grove.app</code> in Applications, before
+         you open it:</p>
 <pre>xattr -dr com.apple.quarantine /Applications/Grove.app</pre>
-      <p>Without it, Finder shows a warning and <b>System Settings → Privacy &amp; Security → Open
-         Anyway</b> is the way through. Homebrew avoids all of this.</p>
+      <p>Open it without that and the dialog says macOS could not verify Grove is free of malware,
+         offering <b>Done</b> and <b>Move to Bin</b> — there is no "Open Anyway" in it. If you have
+         already met it, the app is fine: run the line above and open it again.</p>
       <p style="margin-top:10px"><b>Windows</b> — <b>More info → Run anyway</b>.</p>
     </div>
   </div>

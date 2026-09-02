@@ -28,11 +28,18 @@ The app, on macOS:
 brew tap programmfabrik/grove https://github.com/programmfabrik/grove
 brew trust --cask programmfabrik/grove/grove
 brew install --cask grove
+xattr -dr com.apple.quarantine /Applications/Grove.app
 ```
 
-The `trust` line is not optional: Homebrew refuses to load a cask from a
-third-party tap until you say you trust it, and without it the install stops
-with an error rather than a prompt.
+Neither of the last two lines is optional. Homebrew refuses to load a cask from
+a third-party tap until you say you trust it. And Homebrew quarantines what it
+downloads exactly as a browser does — it does **not** avoid Gatekeeper — so
+without the `xattr` line the first launch is a dialog saying macOS "could not
+verify Grove.app is free of malware", whose buttons on current macOS are
+**Done** and **Move to Bin**. There is no "Open Anyway" in it.
+
+That is the price of an unsigned build, and it says nothing about the program.
+Notarising it is the actual fix and is not done yet.
 
 …or a download for macOS or Windows from
 [the releases](https://github.com/programmfabrik/grove/releases), which the
