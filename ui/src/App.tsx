@@ -157,7 +157,7 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <Logo />
-          <div>
+          <div className="brand-text">
             <div className="brand-title">grove</div>
             <div className="brand-sub mono" title={dir}>
               {dir || '…'}
