@@ -1,0 +1,19 @@
+name: build
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: cd ui && npm ci && npm run build
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./... && go build ./...
+      # ui/dist is committed so `go install` works; a fresh build should reproduce it
+      - run: git diff --quiet -- ui/dist || echo "::warning::ui/dist differs from a fresh build — run make ui and commit it"
