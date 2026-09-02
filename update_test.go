@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 )
@@ -112,5 +114,33 @@ func TestDevBuildNeverChecks(t *testing.T) {
 	}
 	if got := u.get(); got.Available {
 		t.Errorf("a dev build reported an update: %+v", got)
+	}
+}
+
+// The first version of this looked at the executable's own path, which is
+// wrong: a cask moves the app to /Applications and keeps only bookkeeping in
+// the Caskroom, so the path it runs from says nothing about how it got there.
+func TestBrewInstalledLooksAtTheCaskroom(t *testing.T) {
+	old := distKind
+	defer func() { distKind = old }()
+
+	prefix := t.TempDir()
+	t.Setenv("HOMEBREW_PREFIX", prefix)
+
+	distKind = "app"
+	if brewInstalled() {
+		t.Error("no Caskroom entry, yet it claimed Homebrew manages this")
+	}
+	if err := os.MkdirAll(filepath.Join(prefix, "Caskroom", "grove", "0.1.0"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !brewInstalled() {
+		t.Error("a Caskroom entry for grove exists and it was not noticed")
+	}
+	// the command is not what a cask installs, so a cask record says nothing
+	// about it — only living under the Cellar would
+	distKind = "cli"
+	if brewInstalled() {
+		t.Error("a cask record made the command claim to be brew-managed")
 	}
 }

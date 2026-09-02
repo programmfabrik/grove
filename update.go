@@ -164,8 +164,20 @@ func assetName() string {
 	}
 }
 
-// brewInstalled says this build is managed by Homebrew, which keeps what it
-// installs in a Caskroom or Cellar and reaches it through a link.
+// brewInstalled says this build is managed by Homebrew, in which case the
+// answer to a new release is `brew upgrade` and not a download.
+//
+// Not by looking at its own path, which was the first guess and was wrong: a
+// cask MOVES the app to /Applications and keeps only bookkeeping in the
+// Caskroom, so the running executable sits at
+// /Applications/Grove.app/Contents/MacOS/Grove and says nothing whatever about
+// how it got there. What does say so is a Caskroom entry for grove. A command
+// installed as a formula is the other way round — it really does live under
+// the Cellar — so both are asked.
+//
+// A hand-built app on a machine that also has the cask would answer yes here
+// and be told to brew upgrade. It never gets that far: a build from a working
+// tree carries no version and never checks at all.
 func brewInstalled() bool {
 	exe, err := os.Executable()
 	if err != nil {
@@ -174,8 +186,27 @@ func brewInstalled() bool {
 	if real, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = real
 	}
-	exe = filepath.ToSlash(exe)
-	return strings.Contains(exe, "/Caskroom/") || strings.Contains(exe, "/Cellar/")
+	if strings.Contains(filepath.ToSlash(exe), "/Cellar/") {
+		return true // a formula, reached through its link in bin
+	}
+	if distKind != "app" {
+		return false
+	}
+	for _, prefix := range brewPrefixes() {
+		if st, err := os.Stat(filepath.Join(prefix, "Caskroom", "grove")); err == nil && st.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
+// brewPrefixes is where Homebrew keeps itself: Apple Silicon, Intel, and
+// whatever HOMEBREW_PREFIX says when somebody has moved it.
+func brewPrefixes() []string {
+	if p := os.Getenv("HOMEBREW_PREFIX"); p != "" {
+		return []string{p}
+	}
+	return []string{"/opt/homebrew", "/usr/local"}
 }
 
 // newerVersion compares two v-prefixed dotted numbers. Anything it cannot read
