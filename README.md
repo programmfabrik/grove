@@ -3,6 +3,8 @@
 One page over a directory full of git repositories: every checkout, every
 worktree, and what each of them changed, at http://localhost.
 
+![grove: repos, worktrees, and the diff of one commit](docs/grove.png)
+
 Three panes, each narrowing what the next one shows:
 
 1. **repos** — every repository in the start directory, sorted by how much is
