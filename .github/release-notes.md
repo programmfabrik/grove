@@ -12,8 +12,12 @@ through Homebrew, which does not go through the quarantine:
 
 ```sh
 brew tap programmfabrik/grove https://github.com/programmfabrik/grove
+brew trust --cask programmfabrik/grove/grove
 brew install --cask grove
 ```
+
+The `trust` line is not optional: Homebrew refuses a cask from a third-party tap
+until you say you trust it.
 
 …or, having unzipped `Grove.app` into `/Applications`, tell macOS you meant it:
 

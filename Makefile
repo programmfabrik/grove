@@ -26,6 +26,7 @@ build: ui ## build bin/grove, the command
 # side in one directory they silently overwrite each other, and the loser is
 # whichever ran first.
 app: ui ## the same dashboard in a window of its own (bin/Grove.app on macOS)
+	@rm -f bin/app/Grove   # go build -o will not overwrite a file it did not write
 	go build -tags desktop -o bin/app/Grove .
 	@[ "$$(uname)" = "Darwin" ] && $(MAKE) --no-print-directory bundle || true
 
@@ -44,6 +45,7 @@ bundle: ## wrap bin/Grove into bin/Grove.app (macOS)
 	cp bin/app/Grove bin/Grove.app/Contents/MacOS/Grove
 
 app-windows: ui ## cross-build the Windows app from here (Wails v3 needs no cgo there)
+	@rm -f bin/app/Grove.exe
 	GOOS=windows GOARCH=amd64 go build -tags desktop -ldflags "-H=windowsgui" -o bin/app/Grove.exe .
 
 run: build ## build and start it (ADDR=127.0.0.1:8000 to pick the address)

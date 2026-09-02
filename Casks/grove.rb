@@ -9,10 +9,14 @@ cask "grove" do
   desc "One page over a directory full of git repositories"
   homepage "https://github.com/programmfabrik/grove"
 
-  depends_on macos: ">= :big_sur"
+  depends_on macos: :big_sur
 
+  # The app only. Deliberately NO `binary` stanza: linking the window's
+  # executable onto the PATH as `grove` would make the command open a window
+  # instead of serving the dashboard, and would shadow a `go install`ed grove
+  # for anyone who has one. The app and the command are two different programs
+  # that happen to share a server.
   app "Grove.app"
-  binary "#{appdir}/Grove.app/Contents/MacOS/Grove", target: "grove"
 
   zap trash: [
     "~/Library/Application Support/grove",

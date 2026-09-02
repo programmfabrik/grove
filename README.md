@@ -26,8 +26,13 @@ The app, on macOS:
 
 ```sh
 brew tap programmfabrik/grove https://github.com/programmfabrik/grove
+brew trust --cask programmfabrik/grove/grove
 brew install --cask grove
 ```
+
+The `trust` line is not optional: Homebrew refuses to load a cask from a
+third-party tap until you say you trust it, and without it the install stops
+with an error rather than a prompt.
 
 …or a download for macOS or Windows from
 [the releases](https://github.com/programmfabrik/grove/releases), which the

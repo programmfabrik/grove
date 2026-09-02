@@ -263,7 +263,10 @@ footer a { color: var(--dim); }
     <p style="color:var(--dim);font-size:14.5px;margin:0">The tidiest way: no quarantine to clear, and
        <code>brew upgrade</code> keeps it current.</p>
 <pre>brew tap programmfabrik/grove https://github.com/programmfabrik/grove
+brew trust --cask programmfabrik/grove/grove
 brew install --cask grove</pre>
+    <p style="color:var(--dimmer);font-size:13.5px;margin:0">The middle line is not optional — Homebrew
+       refuses a cask from a third-party tap until you say you trust it.</p>
 
     <h3 style="margin:30px 0 6px">As a command, anywhere Go runs</h3>
 <pre>go install github.com/programmfabrik/grove@latest
