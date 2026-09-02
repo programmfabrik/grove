@@ -49,6 +49,19 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }).then((r) => j<{ reverted: number }>(r)),
+  // a whole file as one side of the scope sees it — what the syntax colouring
+  // and the rendered markdown read, since a diff is not a file
+  fileText: (
+    name: string,
+    repo: string,
+    scope: string,
+    file: string,
+    side: 'before' | 'after',
+  ): Promise<{ lines: string[]; total: number }> =>
+    fetch(
+      `api/lines?name=${encodeURIComponent(name)}&repo=${encodeURIComponent(repo)}&scope=${encodeURIComponent(scope)}` +
+        `&file=${encodeURIComponent(file)}&from=1&to=0&side=${side}`,
+    ).then((r) => j<{ lines: string[]; total: number }>(r)),
   // the hunk expanders: the unchanged lines a diff leaves out, read at the
   // scope's own revision
   fileLines: (

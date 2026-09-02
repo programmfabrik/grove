@@ -4,6 +4,7 @@ import type { Checkout, DiffFile, ScopeRepo } from '../types'
 import { buildTree, filterTree, firstLeaf, leavesOf, TreeRows, visibleLeaves, type Node } from './DiffTree'
 import { ScopeList } from './ScopeList'
 import { FileDiff } from './FileDiff'
+import { isMarkdown, Markdown } from './Markdown'
 import { clamp, Splitter, useStoredWidth } from './Splitter'
 import { PaneHead, PaneRail, useFolded } from './Pane'
 import { ScopeHead } from './ScopeHead'
@@ -80,6 +81,17 @@ export function DiffTab({
   const toggleUnmerged = (v: boolean) => {
     setUnmergedOnly(v)
     localStorage.setItem('grove_unmerged_only', v ? '1' : '0')
+  }
+  // A markdown file reads as its diff or rendered, before and after side by
+  // side. The last choice is the default for the next file; a file switched
+  // on its own keeps its own choice for the session.
+  const [mdDefault, setMdDefault] = useState(() => localStorage.getItem('grove_md_rendered') === '1')
+  const [mdChoice, setMdChoice] = useState<Record<string, boolean>>({})
+  const rendered = (k: string) => mdChoice[k] ?? mdDefault
+  const setRendered = (k: string, v: boolean) => {
+    setMdChoice((prev) => ({ ...prev, [k]: v }))
+    setMdDefault(v)
+    localStorage.setItem('grove_md_rendered', v ? '1' : '0')
   }
 
   const loadScopes = useCallback(
@@ -411,6 +423,16 @@ export function DiffTab({
                   title={f.merged ? originLabel.merged : originLabel[f.origin] ?? f.origin}
                 />
                 <span className="fs-path mono">{f.path}</span>
+                {isMarkdown(f.path) && (
+                  <span className="seg seg-mini" onClick={(e) => e.stopPropagation()}>
+                    <button className={rendered(k) ? '' : 'active'} onClick={() => setRendered(k, false)}>
+                      raw
+                    </button>
+                    <button className={rendered(k) ? 'active' : ''} onClick={() => setRendered(k, true)}>
+                      rendered
+                    </button>
+                  </span>
+                )}
                 <span className="fs-stat">
                   {!!f.added && <span className="plus">+{f.added}</span>}
                   {!!f.deleted && <span className="minus">−{f.deleted}</span>}
@@ -418,14 +440,18 @@ export function DiffTab({
               </div>
               {open && sel && (
                 <div className={single ? '' : 'fs-body'}>
-                  <FileDiff
-                    name={c.name}
-                    repo={sel.repo}
-                    scope={sel.scope}
-                    file={f}
-                    ignoreComments={ignoreComments}
-                    poll={poll}
-                  />
+                  {isMarkdown(f.path) && rendered(k) ? (
+                    <Markdown name={c.name} repo={sel.repo} scope={sel.scope} file={f} poll={poll} />
+                  ) : (
+                    <FileDiff
+                      name={c.name}
+                      repo={sel.repo}
+                      scope={sel.scope}
+                      file={f}
+                      ignoreComments={ignoreComments}
+                      poll={poll}
+                    />
+                  )}
                 </div>
               )}
             </section>

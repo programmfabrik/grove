@@ -158,6 +158,9 @@ a { color: var(--accent-ink); }
 .seg button { background: none; border: none; padding: 6px 10px; font-size: 13px; color: var(--dim); cursor: pointer; font-family: inherit; }
 .seg button + button { border-left: 1px solid var(--border); }
 .seg button.active { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent-ink); font-weight: 600; }
+/* the raw | rendered switch in a file section's header */
+.seg-mini { flex: none; border-radius: 6px; }
+.seg-mini button { padding: 1px 7px; font-size: 10.5px; }
 
 .copy {
   display: inline-flex; align-items: baseline; gap: 6px; max-width: 100%;
@@ -502,3 +505,48 @@ a { color: var(--accent-ink); }
    into the 10px rather than grow it. */
 .tw-caret-hit { cursor: pointer; width: 18px; margin: 0 -4px; }
 .tw-caret-hit:hover { color: var(--accent-ink); }
+
+/* ── syntax colours ──────────────────────────────────────────────────── */
+/* one palette per theme; the classes are highlight.js's, the values follow
+   the two GitHub palettes the diff colours already come from */
+:root {
+  --hl-kw: #cf222e; --hl-str: #0a3069; --hl-cmt: #6e7781; --hl-num: #0550ae;
+  --hl-fn: #8250df; --hl-type: #953800; --hl-attr: #116329; --hl-var: #e36209; --hl-meta: #0550ae;
+}
+:root[data-theme='dark'] {
+  --hl-kw: #ff7b72; --hl-str: #a5d6ff; --hl-cmt: #8b949e; --hl-num: #79c0ff;
+  --hl-fn: #d2a8ff; --hl-type: #ffa657; --hl-attr: #7ee787; --hl-var: #ffa657; --hl-meta: #79c0ff;
+}
+.hljs-keyword, .hljs-selector-tag, .hljs-doctag, .hljs-template-tag, .hljs-operator { color: var(--hl-kw); }
+.hljs-string, .hljs-regexp, .hljs-quote, .hljs-link { color: var(--hl-str); }
+.hljs-comment { color: var(--hl-cmt); font-style: italic; }
+.hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet { color: var(--hl-num); }
+.hljs-title, .hljs-title.function_, .hljs-section { color: var(--hl-fn); }
+.hljs-type, .hljs-title.class_, .hljs-built_in { color: var(--hl-type); }
+.hljs-attr, .hljs-attribute, .hljs-name, .hljs-selector-class, .hljs-selector-id, .hljs-selector-attr, .hljs-selector-pseudo { color: var(--hl-attr); }
+.hljs-variable, .hljs-template-variable, .hljs-property { color: var(--hl-var); }
+.hljs-meta, .hljs-meta .hljs-keyword, .hljs-meta .hljs-string { color: var(--hl-meta); }
+.hljs-strong { font-weight: 600; }
+.hljs-emphasis { font-style: italic; }
+.hljs-addition { color: var(--diff-add-ink); }
+.hljs-deletion { color: var(--diff-del-ink); }
+
+/* ── rendered markdown ───────────────────────────────────────────────── */
+.md { font-size: 13.5px; line-height: 1.55; max-width: 84ch; padding: 2px 6px 12px; overflow-wrap: break-word; }
+.md > :first-child { margin-top: 0; }
+.md h1, .md h2, .md h3, .md h4 { margin: 20px 0 8px; line-height: 1.25; font-weight: 650; }
+.md h1 { font-size: 1.55em; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.md h2 { font-size: 1.28em; padding-bottom: 3px; border-bottom: 1px solid var(--border); }
+.md h3 { font-size: 1.1em; }
+.md p, .md ul, .md ol, .md pre, .md table, .md blockquote, .md details { margin: 0 0 10px; }
+.md li + li { margin-top: 2px; }
+.md code { font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace; font-size: 0.9em; padding: 1px 4px; border-radius: 4px; background: color-mix(in srgb, var(--dim) 12%, transparent); }
+.md pre { padding: 10px 12px; border-radius: 8px; overflow: auto; font-size: 12px; line-height: 1.5; background: color-mix(in srgb, var(--dim) 8%, transparent); }
+.md pre code { padding: 0; background: none; font-size: inherit; }
+.md table { border-collapse: collapse; font-size: 12.5px; display: block; overflow: auto; max-width: 100%; }
+.md th, .md td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; vertical-align: top; }
+.md th { background: color-mix(in srgb, var(--dim) 7%, transparent); font-weight: 600; }
+.md blockquote { margin-left: 0; padding: 0 12px; color: var(--dim); border-left: 3px solid var(--border); }
+.md img { max-width: 100%; height: auto; border-radius: 6px; }
+.md a { color: var(--accent-ink); }
+.md hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }

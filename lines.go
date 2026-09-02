@@ -15,14 +15,23 @@ import (
 // read: any line range of the file at the scope's own revision.
 //
 //	GET /api/lines?name=myrepo1&repo=myrepo&scope=base&file=…&from=120&to=170
+//	GET /api/lines?…&file=…&to=0&side=before
 //
 // Line numbers are 1-based and refer to the AFTER side, the same numbering the
 // diff's right-hand gutter shows. `total` lets the viewer know where the file
 // ends, so the expander below the last hunk can stop offering more.
+//
+// `to=0` is the whole file, and `side=before` the revision the diff compares
+// against instead: that is what the syntax colouring and the rendered
+// markdown read. A diff is not a file — a comment opened in one hunk closes in
+// the next — so each side is highlighted whole and the diff lines look their
+// colours up by number.
 
-// linesMax caps one request. The expander asks for a screenful at a time, so
-// this only bounds a hand-written URL.
+// linesMax caps one ranged request. The expander asks for a screenful at a
+// time, so this only bounds a hand-written URL. A whole-file read is bounded
+// by wholeMax instead: past that the viewer shows the diff plain.
 const linesMax = 500
+const wholeMax = 400 << 10
 
 func (d *grove) handleLines(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -56,7 +65,7 @@ func (d *grove) handleLines(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := fileAt(root, file, spec)
+	body, err := fileAt(root, file, spec, q.Get("side") == "before")
 	if err != nil {
 		writeErr(w, http.StatusNotFound, err)
 		return
@@ -68,10 +77,16 @@ func (d *grove) handleLines(w http.ResponseWriter, r *http.Request) {
 	if from < 1 {
 		from = 1
 	}
-	if to < from {
+	switch {
+	case to == 0: // the whole file
+		if len(body) > wholeMax {
+			writeErr(w, http.StatusRequestEntityTooLarge, fmt.Errorf("file larger than %d KB", wholeMax>>10))
+			return
+		}
+		to = len(all)
+	case to < from:
 		to = from
-	}
-	if to-from >= linesMax {
+	case to-from >= linesMax:
 		to = from + linesMax - 1
 	}
 	if from > len(all) {
@@ -88,12 +103,13 @@ func (d *grove) handleLines(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// fileAt reads the whole file as the scope's AFTER side sees it — the working
-// tree for a range or the index, the commit itself for a commit scope. The
-// same resolution the media preview uses, so an expanded line and a preview
-// never disagree about which revision is on screen.
-func fileAt(root, path string, spec scopeSpec) (string, error) {
-	rev, fromWorktree := blobRev(spec, false)
+// fileAt reads the whole file as one side of the scope sees it: the AFTER
+// side — the working tree for a range or the index, the commit itself for a
+// commit scope — or, with before, the revision the diff compares against. The
+// same resolution the media preview uses, so an expanded line, a coloured
+// line and a preview never disagree about which revision is on screen.
+func fileAt(root, path string, spec scopeSpec, before bool) (string, error) {
+	rev, fromWorktree := blobRev(spec, before)
 	if fromWorktree {
 		buf, err := os.ReadFile(filepath.Join(root, filepath.Clean(path)))
 		if err == nil {

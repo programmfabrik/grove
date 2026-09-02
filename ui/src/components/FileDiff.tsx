@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
 import type { DiffFile } from '../types'
 import { Preview } from './Preview'
+import { highlightLines, languageOf } from '../lib/highlight'
 
 // One file's diff: its own text, its own expanded context, its own preview.
 // Extracted from the viewer so a selection of many files is simply many of
@@ -128,6 +129,38 @@ export function FileDiff({
 
   const lines = useMemo(() => parseDiff(text), [text])
 
+  // Syntax colours come from each side of the file highlighted whole
+  // (lib/highlight.ts): a removed line reads the before side by its old
+  // number, everything else the after side by its new number — the expanded
+  // context included, which comes from the same file. Until the colours are
+  // in, and for a language the highlighter does not know, the text is plain.
+  const language = useMemo(() => languageOf(file.path), [file.path])
+  const [hl, setHl] = useState<{ before?: string[]; after?: string[] } | null>(null)
+  useEffect(() => {
+    setHl(null)
+    if (!language || !lines.length) return
+    let cancelled = false
+    const side = async (s: 'before' | 'after') => {
+      try {
+        const r = await api.fileText(name, repo, scope, file.path, s)
+        return await highlightLines(r.lines.join('\n'), language)
+      } catch {
+        return undefined // too large, or no file on that side
+      }
+    }
+    const needBefore = lines.some((l) => l.kind === 'del')
+    Promise.all([needBefore ? side('before') : Promise.resolve(undefined), side('after')]).then(([before, after]) => {
+      if (!cancelled) setHl({ before, after })
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `lines` follows `text`
+  }, [language, text, name, repo, scope, file.path])
+  const coloured = (l: Line): string | undefined =>
+    l.kind === 'del' ? hl?.before?.[(l.old ?? 0) - 1] : l.new ? hl?.after?.[l.new - 1] : undefined
+  const colouredAt = (newNo: number): string | undefined => hl?.after?.[newNo - 1]
+
   const expand = async (idx: number, gapFrom: number, gapTo: number) => {
     const already = expanded[idx]
     const to = already ? already.from - 1 : gapTo
@@ -166,12 +199,17 @@ export function FileDiff({
       <div className="diff mono">
         {lines.map((l, i) => {
           if (l.kind !== 'hunk') {
+            const html = l.kind === 'meta' ? undefined : coloured(l)
             return (
               <div key={i} className={`dl dl-${l.kind}`}>
                 <span className="dl-no">{l.old ?? ''}</span>
                 <span className="dl-no">{l.new ?? ''}</span>
                 <span className="dl-sign">{l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : ' '}</span>
-                <span className="dl-text">{l.text || ' '}</span>
+                {html !== undefined ? (
+                  <span className="dl-text" dangerouslySetInnerHTML={{ __html: html || ' ' }} />
+                ) : (
+                  <span className="dl-text">{l.text || ' '}</span>
+                )}
               </div>
             )
           }
@@ -201,14 +239,21 @@ export function FileDiff({
                   <span className="dl-text">{l.text}</span>
                 </div>
               )}
-              {shown?.lines.map((t, k) => (
-                <div key={k} className="dl dl-ctx dl-context">
-                  <span className="dl-no">{shown.from + k - (l.offset ?? 0)}</span>
-                  <span className="dl-no">{shown.from + k}</span>
-                  <span className="dl-sign"> </span>
-                  <span className="dl-text">{t || ' '}</span>
-                </div>
-              ))}
+              {shown?.lines.map((t, k) => {
+                const html = colouredAt(shown.from + k)
+                return (
+                  <div key={k} className="dl dl-ctx dl-context">
+                    <span className="dl-no">{shown.from + k - (l.offset ?? 0)}</span>
+                    <span className="dl-no">{shown.from + k}</span>
+                    <span className="dl-sign"> </span>
+                    {html !== undefined ? (
+                      <span className="dl-text" dangerouslySetInnerHTML={{ __html: html || ' ' }} />
+                    ) : (
+                      <span className="dl-text">{t || ' '}</span>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )
         })}
@@ -219,14 +264,21 @@ export function FileDiff({
             the line count from the diff response says which */}
         {!!lines.length && (
           <>
-            {tail?.lines.map((t, k) => (
-              <div key={k} className="dl dl-ctx dl-context">
-                <span className="dl-no" />
-                <span className="dl-no">{tail.from + k}</span>
-                <span className="dl-sign"> </span>
-                <span className="dl-text">{t || ' '}</span>
-              </div>
-            ))}
+            {tail?.lines.map((t, k) => {
+              const html = colouredAt(tail.from + k)
+              return (
+                <div key={k} className="dl dl-ctx dl-context">
+                  <span className="dl-no" />
+                  <span className="dl-no">{tail.from + k}</span>
+                  <span className="dl-sign"> </span>
+                  {html !== undefined ? (
+                    <span className="dl-text" dangerouslySetInnerHTML={{ __html: html || ' ' }} />
+                  ) : (
+                    <span className="dl-text">{t || ' '}</span>
+                  )}
+                </div>
+              )
+            })}
             {total > 0 && tailTo < total && (
               <div className="dl dl-hunk">
                 <span className="dl-expand">

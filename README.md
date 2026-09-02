@@ -213,6 +213,28 @@ revision is on screen. Revealed lines carry both line numbers and sit on a
 quieter background than the diff itself. Once a gap is fully revealed its
 header row goes away, so the lines read as the contiguous stretch they are.
 
+**Syntax colours.** A diff is not a file — a block comment can open in one
+hunk and close in the next, and a tokenizer fed one hunk at a time gets that
+wrong — so each side of a file is highlighted whole, at the scope's own
+revision, and every diff line looks its colours up by line number: a removed
+line on the before side, everything else on the after side, the expanded
+context included. highlight.js does the colouring in the browser, loaded on
+first use in a chunk of its own, with a fixed set of languages chosen by file
+name (`ui/src/lib/highlight.ts`); a file outside the set stays plain, and so
+does a file over 400 KB. The palette follows the two GitHub palettes the diff
+colours already come from, one per theme.
+
+**Markdown, raw or rendered.** A `.md` file's section header carries a
+`raw | rendered` switch. Rendered shows before and after side by side, the
+same two panes the image preview uses, one pane where the change added or
+removed the file; GitHub-flavoured through marked, fenced code through the
+same highlighter, and everything through DOMPurify before it touches the page
+— the file comes out of somebody's repository and this page has a write
+endpoint. A relative image resolves through the blob endpoint at the pane's
+own side, so a screenshot the change added shows on the right and not on the
+left. The last choice is the default for the next file; a file switched on its
+own keeps its choice for the session.
+
 The same marker heads the diff itself. One git command covers every range
 case: the fork point (`git merge-base <base> HEAD`) against the working tree —
 so a file that is partly committed and partly not reads as one diff. Untracked
@@ -319,15 +341,17 @@ cd ui && npm run dev
 | `discover.go` | worktree discovery and the per-checkout git facts |
 | `scope.go` | `/api/scopes` — what can be diffed, per repo |
 | `diff.go` | `/api/diff` — the submodules a checkout spans, a scope's changed files, and one file's diff |
-| `lines.go` | `/api/lines` — the unchanged lines the hunk expanders pull in |
+| `lines.go` | `/api/lines` — the unchanged lines the hunk expanders pull in, and whole files for the colouring and the rendering |
 | `preview.go` | `/api/blob` — bytes of a renderable file, at either revision |
 | `revert.go` | `/api/revert` — unstage and discard |
 | `ui.go` | the embedded SPA |
-| `ui/` | vite + React 18 + TypeScript |
+| `ui/` | vite + React 18 + TypeScript; highlight.js, marked and DOMPurify in lazy chunks |
 | `ui/src/components/Sidebar.tsx` | the sidebar shell and its tabs |
 | `ui/src/components/DiffTab.tsx` | file selection and diff rendering |
 | `ui/src/components/DiffTree.tsx` | the flat file list turned into a per-repo tree |
 | `ui/src/components/FileDiff.tsx` | one file's diff, its expanders and its preview |
+| `ui/src/components/Markdown.tsx` | the rendered reading of a markdown file, before and after |
+| `ui/src/lib/highlight.ts`, `lib/md.ts` | the lazily loaded highlighter and markdown renderer |
 
 grove grew up inside [fylr](https://github.com/programmfabrik/fylr) as a tool
 over its two dozen worktrees, and moved out once nothing in it was fylr's any

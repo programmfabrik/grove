@@ -199,7 +199,7 @@ func (d *grove) handleDiff(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		total := 0
-		if body, err := fileAt(root, file, spec); err == nil && body != "" {
+		if body, err := fileAt(root, file, spec, false); err == nil && body != "" {
 			total = strings.Count(strings.TrimSuffix(body, "\n"), "\n") + 1
 		}
 		writeJSON(w, http.StatusOK, DiffText{Path: file, Diff: text, Total: total, Truncated: truncated})
