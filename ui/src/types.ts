@@ -13,15 +13,11 @@ export type Checkout = {
   is_main: boolean
   branch: string
   detached: boolean
-  ticket: string
   head: Commit
   ahead: number
   behind: number
   dirty: number
 }
-
-// which tab of the sidebar is showing
-export type PanelTab = 'diff' | 'worktree'
 
 // where a changed file's change lives. "staged" only occurs in the staged
 // scope, where every file is by definition in the index.

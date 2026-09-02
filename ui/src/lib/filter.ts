@@ -19,23 +19,33 @@ export function matches(path: string, terms: string[]): boolean {
   return terms.every((t) => low.includes(t))
 }
 
-// marks is where the terms hit `text`, as merged [start, end) ranges. Merged
-// because terms overlap — "rel" and "release" both hit the same letters, and a
-// highlight drawn twice over one letter comes out as nested markup instead of
-// one mark.
-export function marks(text: string, terms: string[]): [number, number][] {
+// matchesFields is the same rule over a row with several texts — a name, a
+// branch, a subject: every term has to hit one of them, whichever.
+export function matchesFields(terms: string[], fields: (string | undefined)[]): boolean {
+  const lows = fields.filter((f): f is string => !!f).map((f) => f.toLowerCase())
+  return terms.every((t) => lows.some((f) => f.includes(t)))
+}
+
+// tokenRuns cuts `text` into runs, each owned by the term that hit it or by
+// none, so a label can colour every term differently. Terms overlap — "rel"
+// and "release" hit the same letters — and the earlier term keeps the letters
+// it reached first, so no letter is claimed twice.
+export function tokenRuns(text: string, terms: string[]): { text: string; term: number }[] {
   const low = text.toLowerCase()
-  const hits: [number, number][] = []
-  for (const t of terms) {
-    // from i+1, not i+t.length: a term can overlap its own next occurrence
-    for (let i = low.indexOf(t); i !== -1; i = low.indexOf(t, i + 1)) hits.push([i, i + t.length])
-  }
-  hits.sort((a, b) => a[0] - b[0] || a[1] - b[1])
-  const out: [number, number][] = []
-  for (const [start, end] of hits) {
-    const last = out[out.length - 1]
-    if (last && start <= last[1]) last[1] = Math.max(last[1], end)
-    else out.push([start, end])
+  const owner = new Int16Array(text.length).fill(-1)
+  terms.forEach((t, ti) => {
+    if (!t) return
+    for (let i = low.indexOf(t); i !== -1; i = low.indexOf(t, i + 1)) {
+      for (let k = i; k < i + t.length; k++) if (owner[k] === -1) owner[k] = ti
+    }
+  })
+  const out: { text: string; term: number }[] = []
+  let from = 0
+  for (let i = 1; i <= text.length; i++) {
+    if (i === text.length || owner[i] !== owner[from]) {
+      out.push({ text: text.slice(from, i), term: owner[from] })
+      from = i
+    }
   }
   return out
 }

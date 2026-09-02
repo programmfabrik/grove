@@ -1,18 +1,21 @@
 import type { Checkout } from '../types'
 import { useScrollToActive } from '../lib/scroll'
+import { Hits } from './Hits'
 
 // Pane two: the worktrees of the selected repo. Most repos have exactly one
 // checkout and this is a single row; a repo with two dozen is the case worth
-// designing for — name, branch, ticket, and how far each is from the base.
+// designing for — name, branch, and how far each is from the base.
 export function WorktreeList({
   checkouts,
   base,
   sel,
+  terms,
   onPick,
 }: {
   checkouts: Checkout[]
   base: string
   sel: string
+  terms: string[]
   onPick: (name: string) => void
 }) {
   const box = useScrollToActive('.wl-active', sel)
@@ -26,7 +29,9 @@ export function WorktreeList({
           title={c.path}
         >
           <div className="wl-line">
-            <span className="wl-name mono">{c.name}</span>
+            <span className="wl-name mono">
+              <Hits text={c.name} terms={terms} />
+            </span>
             <span className="gitstat" title={`${c.ahead} ahead of ${base}, ${c.behind} behind, ${c.dirty} uncommitted`}>
               <span className={c.ahead ? 'ahead on' : 'ahead'}>↑{c.ahead}</span>
               <span className={c.behind ? 'behind on' : 'behind'}>↓{c.behind}</span>
@@ -35,9 +40,8 @@ export function WorktreeList({
           </div>
           <div className="wl-sub">
             <span className="wl-branch dim" title={c.branch}>
-              {c.detached ? 'detached' : c.branch}
+              <Hits text={c.detached ? 'detached' : c.branch} terms={terms} />
             </span>
-            {c.ticket && <span className="wl-ticket mono">#{c.ticket}</span>}
           </div>
         </div>
       ))}

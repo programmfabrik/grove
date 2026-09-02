@@ -5,18 +5,17 @@
 // panes read their opening values from it once at mount. Nobody merges, so no
 // two writers can race a half-updated fragment into place.
 //
-//   #repo=myrepo&wt=myrepo3&tab=diff&sub=myrepo&scope=base&file=cmd/main.go
+//   #repo=myrepo&wt=myrepo3&sub=myrepo&scope=base&file=cmd/main.go
 
 export type UrlState = {
   repo?: string // repository NAME, not its path — shorter and stable
   wt?: string // worktree (checkout) name
-  tab?: string // diff | worktree
   sub?: string // sub-repo inside the checkout
   scope?: string
   file?: string
 }
 
-const KEYS: (keyof UrlState)[] = ['repo', 'wt', 'tab', 'sub', 'scope', 'file']
+const KEYS: (keyof UrlState)[] = ['repo', 'wt', 'sub', 'scope', 'file']
 
 export function readUrl(): UrlState {
   const p = new URLSearchParams(location.hash.replace(/^#/, ''))

@@ -9,9 +9,10 @@ Three panes, each narrowing what the next one shows:
 
 1. **repos** — every repository in the start directory, sorted by how much is
    checked out and then by when it was last worked in
-2. **worktrees** — the checkouts of the selected repo: branch, ticket, distance
-   from the base branch, uncommitted count
-3. **viewer** — the selected worktree's diff, or everything else known about it
+2. **worktrees** — the checkouts of the selected repo: branch, distance from
+   the base branch, uncommitted count
+3. **viewer** — the selected worktree: what is known about it in the head, its
+   diff below
 
 grove reads git and nothing else. It never starts, stops or reconfigures
 anything. The single exception is the diff tree's context menu — see
@@ -46,7 +47,7 @@ when the port is taken, `-addr :8000`.
 | the repo list | the top level of the start directory, entries with a `.git`; each resolved through `git rev-parse --git-common-dir` so a linked worktree is not listed as a repo of its own |
 | a repo's worktrees | `git worktree list --porcelain` on the repo — which reports them wherever they live, a sibling directory of worktrees included. The main checkout comes first, the rest in natural order of their names (`wt2` before `wt10`) |
 | last used | the newest of the last commit and `.git/HEAD`'s mtime. **Not** `.git`'s mtime: reading a repo touches that, so a dashboard that scans every repo would make them all look freshly used |
-| branch, ticket | `git symbolic-ref HEAD`; the ticket is the branch name's trailing digits |
+| branch | `git symbolic-ref HEAD` |
 | ahead / behind / dirty | `git rev-list --left-right --count <base>...HEAD`, `git status --porcelain -uall` |
 | the base branch | the branch checked out in the repo's main checkout — see below |
 | last commit | `git log -1` |
@@ -77,7 +78,9 @@ against its own remote's default branch instead.
 
 ## The viewer
 
-The third pane, with two tabs. Every vertical separator in the window is
+The third pane. Its head holds what is known about the checkout — name,
+branch, distance from the base, path, head commit — and the diff sits under
+it. Every vertical separator in the window is
 draggable and each width is remembered across reloads; double-click a
 separator to put it back where it started.
 
@@ -124,8 +127,8 @@ commits with byte-identical diffs share a patch-id and one can vouch for the
 other, and a squash merge produces a patch no single branch commit matches, so
 a squashed branch keeps showing as `not in <base>`.
 
-**unmerged only** in the scope column's head drops the grey commits — the
-ones the base branch already has — so a branch on top of a long main reads as
+**unmerged only**, in the scope column's filter, drops the grey commits —
+the ones the base branch already has — so a branch on top of a long main reads as
 its own four commits rather than the twenty on screen. The range and index
 scopes stay, and a section says how many commits it hid. Remembered, like
 `ignore comments`.
@@ -134,11 +137,12 @@ Over the file tree and the diff — the two columns that show the scope, not the
 one that offers alternatives — stands its header: for a commit its subject,
 sha, author and date, with the message body one click below (`▸ message`); for
 a range or the index the scope and what it holds. The window's own head above
-stays on the checkout: name, branch, ticket, uncommitted count. The selected
+stays on the checkout: name, branch, distance from the base, path and head
+commit. The selected
 file's name is not up there — a selection can be sixty files, and each already
 carries its own header in the viewer.
 
-**ignore comments** in the head drops changes whose lines are all comments —
+**ignore comments**, in the same filter, drops changes whose lines are all comments —
 git does the work through `-I<regex>`, so a hunk that only rewords a comment
 disappears, and a file with nothing else left disappears with it. Note that
 `--name-status` does *not* honour `-I` while `--numstat` does, which is why the
@@ -173,9 +177,14 @@ would not change on the base is already there. It gets the grey dot, and
 **unmerged only** hides it along with the landed commits. Uncommitted work is
 never on the base and is never marked.
 
-The middle column has a **filter** under its head. It is a filter, not a
-search: it narrows the tree already on screen, so it answers as fast as you can
-type and never changes what the scope holds. The query is whitespace-separated
+Every column has a **filter** folded under its header — click the header to
+open it, click again to close it, and whether it is open is remembered like
+the widths and the folds are. Repos filter by name and branch, worktrees by
+name, branch and last subject, the scope column by subject, sha and
+author (and it holds the two switches above), the files column by path. Each is
+a filter, not a search: it narrows the list already on screen, so it answers as
+fast as you can type and never changes what the scope holds. Closing a filter
+clears its text; the switches keep their setting. The query is whitespace-separated
 terms, all of which must match, in any order, case-insensitively, anywhere in
 the path — order-independent because a path is remembered in pieces, and
 `yml workflows` is the same thought as `workflows release`. Matching the whole
@@ -190,9 +199,11 @@ that has to stick. One set cannot do both, because a filtered tree is nothing
 but ancestors of matches: a rule that keeps matches visible would undo every
 fold you made inside it. So a filter starts with nothing folded, folds made
 while it is on go to their own set, and clearing it hands back the tree you
-left. The matched letters are marked in the labels — in their own colour,
-since the selected row is already accent-tinted and a hit marked in accent
-would vanish exactly where it is being looked for. Directory rows re-sum their
+left. The matched letters are marked in every list, each term in a colour of
+its own — the colour the term wears in the filter input, so the eye can tell
+which word found what. None of them is the accent: the selected row is already
+accent-tinted, and a hit marked in accent would vanish exactly where it is
+being looked for. Directory rows re-sum their
 `+`/`−` over what survived, so a row never reports a total for files that are
 not under it any more. The head counts `shown / total`, and `esc` or the `×`
 clears.
@@ -291,11 +302,6 @@ goes through a dialog that names the files first, and spells out the deletions
 separately from the restores. `/api/revert` is the only endpoint that writes,
 it takes only paths inside the checkout, and it never touches a commit.
 
-### worktree
-
-Everything else known about the checkout: its full path, its branch spelled
-out against the base, and the head commit.
-
 ## The URL
 
 The view lives in the URL fragment, so a reload comes back to where you were
@@ -303,7 +309,7 @@ and the address bar is a copyable link to "that file, in that scope, of that
 worktree":
 
 ```
-#repo=myrepo&wt=myrepo3&tab=diff&sub=myrepo&scope=commit:81b535fb&file=cmd/main.go
+#repo=myrepo&wt=myrepo3&sub=myrepo&scope=commit:81b535fb&file=cmd/main.go
 ```
 
 The app owns the fragment and writes it whole from its state; each pane reads
@@ -346,7 +352,7 @@ cd ui && npm run dev
 | `revert.go` | `/api/revert` — unstage and discard |
 | `ui.go` | the embedded SPA |
 | `ui/` | vite + React 18 + TypeScript; highlight.js, marked and DOMPurify in lazy chunks |
-| `ui/src/components/Sidebar.tsx` | the sidebar shell and its tabs |
+| `ui/src/components/Sidebar.tsx` | the checkout's head, and the diff under it |
 | `ui/src/components/DiffTab.tsx` | file selection and diff rendering |
 | `ui/src/components/DiffTree.tsx` | the flat file list turned into a per-repo tree |
 | `ui/src/components/FileDiff.tsx` | one file's diff, its expanders and its preview |

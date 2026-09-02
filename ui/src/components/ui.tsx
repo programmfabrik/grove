@@ -39,13 +39,3 @@ export function Copy({ text, children, title }: { text: string; children?: React
     </button>
   )
 }
-
-// Field is one labelled value in the expanded detail panel.
-export function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="field">
-      <div className="field-label">{label}</div>
-      <div className="field-value">{children}</div>
-    </div>
-  )
-}

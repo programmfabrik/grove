@@ -11,7 +11,6 @@
   --running: #16a34a;
   --warn: #d97706;
   --unmerged: #0969da; /* pushed, but the base branch has not got it yet */
-  --hit: #ffe9a8; /* what the files filter matched */
   --danger: #dc2626;
   --hover: color-mix(in srgb, var(--accent) 6%, transparent);
 }
@@ -28,7 +27,6 @@
   --running: #3fb950;
   --warn: #d29922;
   --unmerged: #58a6ff;
-  --hit: #6b5312;
   --danger: #f85149;
 }
 
@@ -75,6 +73,13 @@ a { color: var(--accent-ink); }
 }
 .pane-body { flex: 1; min-height: 0; overflow: auto; background: var(--card); }
 .pane-head-right { display: inline-flex; align-items: center; gap: 8px; }
+/* a header that opens its column's filter: the label is the click target,
+   the glass says whether the filter is open or narrowing the list */
+.pane-head-filterable { cursor: pointer; user-select: none; }
+.pane-head-filterable:hover { color: var(--text); }
+.pane-head-label { display: inline-flex; align-items: center; gap: 5px; }
+.pane-head-search { width: 11px; height: 11px; opacity: 0.45; }
+.pane-head-search.on { opacity: 1; color: var(--accent-ink); }
 .pane-fold {
   border: none; background: none; padding: 0 1px; cursor: pointer;
   font-family: inherit; font-size: 14px; line-height: 1; color: var(--dim); opacity: 0.5;
@@ -107,12 +112,6 @@ a { color: var(--accent-ink); }
 .brand-title { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
 .brand-sub { font-size: 11.5px; color: var(--dim); max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topbar-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
-.search {
-  padding: 7px 11px; min-width: 230px;
-  border: 1px solid var(--border); border-radius: 8px;
-  background: var(--card); color: var(--text); font-size: 13px;
-}
-.search:focus { outline: none; border-color: var(--accent); }
 .toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--dim); user-select: none; }
 .toggle input { accent-color: var(--accent); }
 /* a toggle inside a pane head: the head's small caps stay on the label, not on it */
@@ -134,7 +133,6 @@ a { color: var(--accent-ink); }
 .gitstat .on.ahead { color: var(--running); font-weight: 600; }
 .gitstat .on.behind { color: var(--warn); font-weight: 600; }
 .gitstat .on.dirty { color: var(--danger); font-weight: 600; }
-
 
 /* ── buttons ─────────────────────────────────────────────────────────── */
 .btn, .btn-ghost {
@@ -211,19 +209,32 @@ a { color: var(--accent-ink); }
 }
 /* the files filter sits between the column's head and its tree, the width of
    the column — it narrows what is below it and nothing else */
-.tw-filter { position: relative; display: flex; padding: 6px 8px 0; background: var(--card); }
-.tw-filter-input {
-  flex: 1; min-width: 0; padding: 4px 22px 4px 8px;
-  border: 1px solid var(--border); border-radius: 6px;
-  background: var(--bg); color: var(--text); font-family: inherit; font-size: 12px;
+/* a column's filter, folded under its header */
+.pane-filter { background: var(--card); padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.pane-filter-opts { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 7px 10px 0; }
+.pane-filter-row { position: relative; display: flex; padding: 6px 8px 0; }
+.pane-filter-box { position: relative; flex: 1; min-width: 0; }
+/* the input's text is transparent and the mirror under it draws the same
+   text in token colours — same box, same font, so the caret lands on it */
+.pane-filter-input, .pane-filter-mirror {
+  box-sizing: border-box; width: 100%; margin: 0; padding: 5px 24px 5px 9px;
+  border: 1px solid var(--border); border-radius: 7px;
+  font: inherit; font-size: 12.5px; line-height: 18px; letter-spacing: normal;
 }
-.tw-filter-input:focus { outline: none; border-color: var(--accent); background: var(--card); }
-.tw-filter-clear {
+.pane-filter-input { background: var(--bg); color: transparent; caret-color: var(--text); }
+.pane-filter-input::placeholder { color: var(--dim); opacity: 0.8; }
+.pane-filter-input:focus { outline: none; border-color: var(--accent); background: var(--card); }
+.pane-filter-mirror {
+  position: absolute; inset: 0; border-color: transparent; background: none;
+  color: var(--text); white-space: pre; overflow: hidden; pointer-events: none;
+}
+
+.pane-filter-clear {
   position: absolute; right: 13px; top: 50%; transform: translateY(-25%);
   border: none; background: none; padding: 0 2px; cursor: pointer;
   font-family: inherit; font-size: 15px; line-height: 1; color: var(--dim);
 }
-.tw-filter-clear:hover { color: var(--accent-ink); }
+.pane-filter-clear:hover { color: var(--accent-ink); }
 .sb-tree {
   flex: 1; min-width: 0; min-height: 0;
   overflow: auto; padding: 6px 0 20px;
@@ -232,7 +243,7 @@ a { color: var(--accent-ink); }
 /* the matched letters, in the one colour nothing else in the app uses — the
    active row is already accent-tinted, so a hit marked in accent would vanish
    exactly where it is being looked for */
-.tw-hit { background: var(--hit); color: var(--text); border-radius: 2px; padding: 0 1px; }
+
 .tw-row {
   display: flex; align-items: center; gap: 4px;
   padding: 2px 8px 2px 0; cursor: pointer; white-space: nowrap;
@@ -272,7 +283,7 @@ a { color: var(--accent-ink); }
 
 /* worktree tab */
 .wt { padding: 16px 18px 24px; overflow: auto; flex: 1; min-height: 0; }
-.wt-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px 24px; }
+
 .tw-stat .plus { color: var(--diff-add-ink); }
 .tw-stat .minus { color: var(--diff-del-ink); }
 /* the file picker: full width of the sidebar head, custom chevron so the
@@ -329,8 +340,6 @@ a { color: var(--accent-ink); }
 }
 
 /* diff sidebar: mode switch + close, and the ↑ counter as a branch-diff link */
-.sb-modes { display: flex; align-items: center; gap: 8px; flex: none; }
-.sb-modes .seg button { padding: 5px 10px; font-size: 12px; }
 
 /* preview of a browser-renderable file, in place of "Binary files differ" */
 .pv { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px; align-items: start; }
@@ -419,7 +428,6 @@ a { color: var(--accent-ink); }
 .wl-name { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wl-sub { display: flex; align-items: baseline; gap: 6px; margin-top: 1px; }
 .wl-branch { flex: 1; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wl-ticket { font-size: 10.5px; color: var(--accent-ink); }
 
 /* ── multi-file sections in the viewer ───────────────────────────────── */
 /* Same shape as the repo headlines in the scope list, so "a section" looks
@@ -550,3 +558,39 @@ a { color: var(--accent-ink); }
 .md img { max-width: 100%; height: auto; border-radius: 6px; }
 .md a { color: var(--accent-ink); }
 .md hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+/* ── filter term colours ─────────────────────────────────────────────── */
+/* one colour per term, cycling; the term in the input and its hits in the
+   lists share it. None of them is the accent: the selected row is already
+   accent-tinted and a hit marked in accent would vanish exactly there. */
+:root {
+  --tok-0: #b45309; --hit-0: #fde68a;
+  --tok-1: #1d4ed8; --hit-1: #bfdbfe;
+  --tok-2: #15803d; --hit-2: #bbf7d0;
+  --tok-3: #7e22ce; --hit-3: #e9d5ff;
+  --tok-4: #be185d; --hit-4: #fbcfe8;
+  --tok-5: #0f766e; --hit-5: #99f6e4;
+}
+:root[data-theme='dark'] {
+  --tok-0: #fbbf24; --hit-0: #713f12;
+  --tok-1: #60a5fa; --hit-1: #1e3a8a;
+  --tok-2: #4ade80; --hit-2: #14532d;
+  --tok-3: #c084fc; --hit-3: #581c87;
+  --tok-4: #f472b6; --hit-4: #831843;
+  --tok-5: #2dd4bf; --hit-5: #134e4a;
+}
+.tok-0 { color: var(--tok-0); } .tok-1 { color: var(--tok-1); } .tok-2 { color: var(--tok-2); }
+.tok-3 { color: var(--tok-3); } .tok-4 { color: var(--tok-4); } .tok-5 { color: var(--tok-5); }
+.hit { color: var(--text); border-radius: 2px; padding: 0 1px; }
+.hit-0 { background: var(--hit-0); } .hit-1 { background: var(--hit-1); } .hit-2 { background: var(--hit-2); }
+.hit-3 { background: var(--hit-3); } .hit-4 { background: var(--hit-4); } .hit-5 { background: var(--hit-5); }
+
+/* the sidebar head carries what the checkout is: name and branch on the
+   left with its distance from the base, path and head commit on the right */
+.sb-branch { margin-left: 8px; font-weight: 400; font-size: 12px; }
+.sb-sub .on.ahead { color: var(--running); font-weight: 600; }
+.sb-sub .on.behind { color: var(--warn); font-weight: 600; }
+.sb-sub .on.dirty { color: var(--danger); font-weight: 600; }
+.sb-facts { flex: 1.3; min-width: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 11.5px; }
+.sb-facts .copy { max-width: 100%; }
+.sb-fact { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

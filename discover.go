@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -29,7 +28,6 @@ type Checkout struct {
 	IsMain   bool   `json:"is_main"`
 	Branch   string `json:"branch"`
 	Detached bool   `json:"detached"`
-	Ticket   string `json:"ticket"` // trailing digits of the branch name
 
 	Head   Commit `json:"head"`
 	Ahead  int    `json:"ahead"`  // commits HEAD has and the base branch has not
@@ -52,9 +50,6 @@ func baseBranch(repo string) string {
 	}
 	return "main"
 }
-
-// ticketRe pulls the ticket off a branch name — feature branches end with it.
-var ticketRe = regexp.MustCompile(`(\d{4,})$`)
 
 // refreshGit re-scans one repository's worktrees. Each checkout's git calls
 // run in their own goroutine — `git status` alone takes ~0.2s and a repo can
@@ -156,9 +151,6 @@ func scanCheckout(ctx context.Context, repo, path, base string) Checkout {
 	}
 	if b, err := git(path, "symbolic-ref", "--quiet", "--short", "HEAD"); err == nil && b != "" {
 		c.Branch = b
-		if m := ticketRe.FindStringSubmatch(b); m != nil {
-			c.Ticket = m[1]
-		}
 	} else {
 		c.Detached = true
 	}

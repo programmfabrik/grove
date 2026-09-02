@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
-import type { Checkout, PanelTab, Repo, State } from './types'
+import type { Checkout, Repo, State } from './types'
 import { RepoList } from './components/RepoList'
 import { WorktreeList } from './components/WorktreeList'
 import { Sidebar } from './components/Sidebar'
 import { Logo } from './components/ui'
 import { fmtAgo } from './lib/format'
 import { clamp, Splitter, useStoredWidth } from './components/Splitter'
-import { PaneHead, PaneRail, useFolded } from './components/Pane'
+import { PaneFilter, PaneHead, PaneRail, useFolded, useStoredFlag } from './components/Pane'
+import { matchesFields, parseTerms } from './lib/filter'
 import { getThemePref, setThemePref, type ThemePref } from './lib/theme'
 import { readUrl, writeUrl } from './lib/urlstate'
 
@@ -27,7 +28,6 @@ export default function App() {
   const [repo, setRepo] = useState('')
   const [state, setState] = useState<State | null>(null)
   const [checkout, setCheckout] = useState('')
-  const [tab, setTab] = useState<PanelTab>(wanted.current.tab === 'worktree' ? 'worktree' : 'diff')
   // The diff tab's own selection, reported up so the fragment has one writer.
   // Seeded FROM the fragment: App writes it as soon as it knows the repo, which
   // happens before the viewer has mounted and read it — starting empty would
@@ -39,7 +39,20 @@ export default function App() {
   }))
   const [diffRepo, setDiffRepo] = useState<string | undefined>(undefined)
   const [error, setError] = useState('')
-  const [q, setQ] = useState('')
+  // each pane filters its own list, from a slideout under its header that
+  // stays open or closed the way it was left; closing one clears its text
+  const [reposQ, setReposQ] = useState('')
+  const [treesQ, setTreesQ] = useState('')
+  const [reposFilter, setReposFilter] = useStoredFlag('grove_repos_filter')
+  const [treesFilter, setTreesFilter] = useStoredFlag('grove_trees_filter')
+  const toggleReposFilter = () => {
+    if (reposFilter) setReposQ('')
+    setReposFilter(!reposFilter)
+  }
+  const toggleTreesFilter = () => {
+    if (treesFilter) setTreesQ('')
+    setTreesFilter(!treesFilter)
+  }
   const [theme, setTheme] = useState<ThemePref>(getThemePref())
   const [refreshing, setRefreshing] = useState(false)
 
@@ -116,25 +129,28 @@ export default function App() {
   }
 
   const checkouts = state?.checkouts ?? []
-  const shown = useMemo(() => {
-    const needle = q.trim().toLowerCase()
-    if (!needle) return checkouts
-    return checkouts.filter((c) =>
-      [c.name, c.branch, c.ticket, c.head.subject]
-        .filter(Boolean)
-        .some((v) => String(v).toLowerCase().includes(needle)),
-    )
-  }, [checkouts, q])
+  const treeTerms = useMemo(() => parseTerms(treesQ), [treesQ])
+  const shown = useMemo(
+    () =>
+      treeTerms.length
+        ? checkouts.filter((c) => matchesFields(treeTerms, [c.name, c.branch, c.head.subject]))
+        : checkouts,
+    [checkouts, treeTerms],
+  )
+  const repoTerms = useMemo(() => parseTerms(reposQ), [reposQ])
+  const shownRepos = useMemo(
+    () => (repos && repoTerms.length ? repos.filter((r) => matchesFields(repoTerms, [r.name, r.branch])) : repos),
+    [repos, repoTerms],
+  )
 
   const current: Checkout | undefined = checkouts.find((c) => c.name === checkout)
 
-  // the fragment mirrors the view: repo, worktree, tab and — on the diff tab —
-  // what the viewer is showing
+  // the fragment mirrors the view: repo, worktree, and what the viewer shows
   const repoName = repos?.find((r) => r.path === repo)?.name
   useEffect(() => {
     if (!repoName) return
-    writeUrl({ repo: repoName, wt: checkout, tab, ...(tab === 'diff' ? diffSel : {}) })
-  }, [repoName, checkout, tab, diffSel])
+    writeUrl({ repo: repoName, wt: checkout, ...diffSel })
+  }, [repoName, checkout, diffSel])
 
   return (
     <div className="app">
@@ -150,12 +166,6 @@ export default function App() {
         </div>
 
         <div className="topbar-tools">
-          <input
-            className="search"
-            placeholder="filter worktrees…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
           <button className="btn-ghost" onClick={refresh} disabled={refreshing}>
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
@@ -184,9 +194,21 @@ export default function App() {
         ) : (
           <>
             <div className="pane" style={{ width: reposW }}>
-              <PaneHead label="repos" meta={repos?.length ?? ''} onCollapse={() => setReposFold(true)} />
+              <PaneHead
+                label="repos"
+                meta={
+                  repos && shownRepos
+                    ? shownRepos.length !== repos.length
+                      ? `${shownRepos.length} / ${repos.length}`
+                      : repos.length
+                    : ''
+                }
+                onCollapse={() => setReposFold(true)}
+                filter={{ open: reposFilter, active: repoTerms.length > 0, onToggle: toggleReposFilter }}
+              />
+              {reposFilter && <PaneFilter value={reposQ} onChange={setReposQ} placeholder="filter repos…" />}
               <div className="pane-body">
-                <RepoList repos={repos} sel={repo} onPick={setRepo} />
+                <RepoList repos={shownRepos} sel={repo} terms={repoTerms} onPick={setRepo} />
               </div>
             </div>
 
@@ -201,15 +223,18 @@ export default function App() {
             <div className="pane" style={{ width: treesW }}>
               <PaneHead
                 label="worktrees"
-                meta={state ? `${shown.length}${shown.length !== checkouts.length ? `/${checkouts.length}` : ''}` : ''}
+                meta={state ? (shown.length !== checkouts.length ? `${shown.length} / ${checkouts.length}` : checkouts.length) : ''}
                 onCollapse={() => setTreesFold(true)}
+                filter={{ open: treesFilter, active: treeTerms.length > 0, onToggle: toggleTreesFilter }}
               />
+              {treesFilter && <PaneFilter value={treesQ} onChange={setTreesQ} placeholder="filter worktrees…" />}
           <div className="pane-body">
             {state ? (
               <WorktreeList
                 checkouts={shown}
                 base={state.base}
                 sel={checkout}
+                terms={treeTerms}
                 onPick={(n) => {
                   setCheckout(n)
                   setDiffRepo(undefined)
@@ -230,7 +255,7 @@ export default function App() {
 
         <div className="pane pane-grow">
           {current ? (
-            <Sidebar c={current} base={state?.base ?? ''} repo={diffRepo} tab={tab} onTab={setTab} onDiffSel={setDiffSel} />
+            <Sidebar c={current} base={state?.base ?? ''} repo={diffRepo} onDiffSel={setDiffSel} />
           ) : (
             <div className="empty">select a worktree</div>
           )}

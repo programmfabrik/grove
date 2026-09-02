@@ -2,6 +2,8 @@ import { useState } from 'react'
 import type { ScopeRepo } from '../types'
 import { useScrollToActive } from '../lib/scroll'
 import { commitState } from '../lib/commit'
+import { matchesFields } from '../lib/filter'
+import { Hits } from './Hits'
 
 // The scope list: what the diff shows, per repo. A worktree's changes have
 // several honest readings — against the base branch, against what is pushed,
@@ -20,6 +22,7 @@ export function ScopeList({
   repos,
   sel,
   unmergedOnly,
+  terms,
   onPick,
 }: {
   repos: ScopeRepo[] | null
@@ -27,6 +30,8 @@ export function ScopeList({
   // drop the commits the base branch already has — the grey ones — so a
   // branch reads as its own work and not the history it sits on
   unmergedOnly: boolean
+  // the column's text filter, over a row's subject, sha, author and hint
+  terms: string[]
   onPick: (repo: string, scope: string) => void
 }) {
   const box = useScrollToActive('.sc-active', `${sel?.repo}:${sel?.scope}`)
@@ -44,8 +49,12 @@ export function ScopeList({
   return (
     <div className="sb-scopes" ref={box}>
       {repos.map((r) => {
-        const shown = unmergedOnly ? r.scopes.filter((s) => s.kind !== 'commit' || !s.merged) : r.scopes
-        const hidden = r.scopes.length - shown.length
+        const shown = r.scopes.filter(
+          (s) =>
+            (!unmergedOnly || s.kind !== 'commit' || !s.merged) &&
+            matchesFields(terms, [s.label, s.sha, s.author, s.hint]),
+        )
+        const landed = unmergedOnly ? r.scopes.filter((s) => s.kind === 'commit' && s.merged).length : 0
         return (
         <div key={r.name} className="sc-repo">
           <div
@@ -73,7 +82,9 @@ export function ScopeList({
               >
                 <div className="sc-line">
                   {state && <span className={state.cls} title={state.title} />}
-                  <span className="sc-label">{s.label}</span>
+                  <span className="sc-label">
+                    <Hits text={s.label} terms={terms} />
+                  </span>
                   {!!(s.added || s.deleted) && (
                     <span className="sc-stat">
                       {!!s.added && <span className="plus">+{s.added}</span>}
@@ -84,20 +95,28 @@ export function ScopeList({
                 <div className="sc-sub dim">
                   {commit ? (
                     <>
-                      <span className="mono">{s.sha}</span> · {s.date}
+                      <span className="mono">
+                        <Hits text={s.sha || ''} terms={terms} />
+                      </span>{' '}
+                      · {s.date}
                     </>
                   ) : (
                     <>
                       {s.files} file{s.files === 1 ? '' : 's'}
-                      {s.hint && ` · ${s.hint}`}
+                      {s.hint && (
+                        <>
+                          {' '}
+                          · <Hits text={s.hint} terms={terms} />
+                        </>
+                      )}
                     </>
                   )}
                 </div>
               </div>
             )
           })}
-          {!folded.has(r.name) && hidden > 0 && (
-            <div className="sc-hidden dim">{hidden} landed · hidden</div>
+          {!folded.has(r.name) && landed > 0 && (
+            <div className="sc-hidden dim">{landed} landed · hidden</div>
           )}
         </div>
         )

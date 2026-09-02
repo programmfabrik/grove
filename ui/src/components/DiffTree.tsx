@@ -1,5 +1,6 @@
 import type { DiffFile } from '../types'
-import { marks, matches } from '../lib/filter'
+import { matches } from '../lib/filter'
+import { Hits } from './Hits'
 
 // The file tree in the diff sidebar's left column. The flat file list the
 // server sends is turned into one tree per sub-repo; a chain of directories
@@ -113,21 +114,11 @@ export function filterTree(nodes: Node[], terms: string[]): Node[] {
 // chain is one label ("internal/server/api"), so the highlight has to work on
 // arbitrary text rather than on a single path segment.
 function Label({ text, terms }: { text: string; terms: string[] }) {
-  const hits = terms.length ? marks(text, terms) : []
-  if (!hits.length) return <span className="tw-label">{text}</span>
-  const out: React.ReactNode[] = []
-  let at = 0
-  hits.forEach(([start, end], i) => {
-    if (start > at) out.push(text.slice(at, start))
-    out.push(
-      <mark key={i} className="tw-hit">
-        {text.slice(start, end)}
-      </mark>,
-    )
-    at = end
-  })
-  if (at < text.length) out.push(text.slice(at))
-  return <span className="tw-label">{out}</span>
+  return (
+    <span className="tw-label">
+      <Hits text={text} terms={terms} />
+    </span>
+  )
 }
 
 // Tree icons. Inline SVG on currentColor: crisp at any zoom, themed by the

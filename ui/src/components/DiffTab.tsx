@@ -6,7 +6,7 @@ import { ScopeList } from './ScopeList'
 import { FileDiff } from './FileDiff'
 import { isMarkdown, Markdown } from './Markdown'
 import { clamp, Splitter, useStoredWidth } from './Splitter'
-import { PaneHead, PaneRail, useFolded } from './Pane'
+import { PaneFilter, PaneHead, PaneRail, useFolded, useStoredFlag } from './Pane'
 import { ScopeHead } from './ScopeHead'
 import { readUrl } from '../lib/urlstate'
 import { parseTerms } from '../lib/filter'
@@ -51,14 +51,12 @@ function sameFiles(a: DiffFile[] | null, b: DiffFile[]): boolean {
 export function DiffTab({
   c,
   repo,
-  ignoreComments,
   onSel,
   reverted,
   onContext,
 }: {
   c: Checkout
   repo?: string
-  ignoreComments: boolean
   reverted: number
   onSel: (s: { sub?: string; scope?: string; file?: string }) => void
   // right-click on the tree: the shell owns the menu and the confirm dialog
@@ -74,6 +72,29 @@ export function DiffTab({
   const [error, setError] = useState('')
   const [poll, setPoll] = useState(0)
   const [filter, setFilter] = useState('')
+  // "ignore comments" changes what the diff asks git for (-I) and so narrows
+  // every file of the scope at once, which is why it sits with the scope.
+  // Remembered, because a reviewer who wants comments out wants them out all
+  // session.
+  const [ignoreComments, setIgnoreComments] = useState(() => localStorage.getItem('grove_ignore_comments') === '1')
+  const toggleIgnore = (v: boolean) => {
+    setIgnoreComments(v)
+    localStorage.setItem('grove_ignore_comments', v ? '1' : '0')
+  }
+  // each column's filter folds under its header and stays the way it was
+  // left; closing one clears its text, the switches keep their setting
+  const [scopeQ, setScopeQ] = useState('')
+  const [scopeFilter, setScopeFilter] = useStoredFlag('grove_scope_filter')
+  const [filesFilter, setFilesFilter] = useStoredFlag('grove_files_filter')
+  const toggleScopeFilter = () => {
+    if (scopeFilter) setScopeQ('')
+    setScopeFilter(!scopeFilter)
+  }
+  const toggleFilesFilter = () => {
+    if (filesFilter) setFilter('')
+    setFilesFilter(!filesFilter)
+  }
+  const scopeTerms = useMemo(() => parseTerms(scopeQ), [scopeQ])
   // the scope list can drop the commits the base branch already has: of
   // twenty commits listed, the four that are the branch are the ones looked
   // for. Remembered, like the other reading preferences.
@@ -123,6 +144,7 @@ export function DiffTab({
     // clean — but switching scope keeps it, which is how you follow one file
     // from commit to commit
     setFilter('')
+    setScopeQ('')
     loadScopes(true).catch((e) => !cancelled && setError(String(e)))
     return () => {
       cancelled = true
@@ -270,22 +292,34 @@ export function DiffTab({
           <div className="pane" style={{ width: scopeW }}>
             <PaneHead
               label="scope"
-              meta={
+              onCollapse={() => setScopeFold(true)}
+              filter={{
+                open: scopeFilter,
+                active: scopeTerms.length > 0 || unmergedOnly || ignoreComments,
+                onToggle: toggleScopeFilter,
+              }}
+            />
+            {scopeFilter && (
+              <PaneFilter value={scopeQ} onChange={setScopeQ} placeholder="filter commits…">
                 <label
                   className="toggle pane-toggle"
-                  title="show only the commits the base branch does not have yet — the amber and blue ones"
+                  title="only what the base branch does not have yet: the amber and blue commits, and the files it lacks"
                 >
                   <input type="checkbox" checked={unmergedOnly} onChange={(e) => toggleUnmerged(e.target.checked)} />
                   unmerged only
                 </label>
-              }
-              onCollapse={() => setScopeFold(true)}
-            />
+                <label className="toggle pane-toggle" title="hide changes whose lines are all comments (git -I)">
+                  <input type="checkbox" checked={ignoreComments} onChange={(e) => toggleIgnore(e.target.checked)} />
+                  ignore comments
+                </label>
+              </PaneFilter>
+            )}
             <div className="pane-body">
               <ScopeList
                 repos={repos}
                 sel={sel}
                 unmergedOnly={unmergedOnly}
+                terms={scopeTerms}
                 onPick={(r, s) => setSel({ name: c.name, repo: r, scope: s })}
               />
             </div>
@@ -312,26 +346,9 @@ export function DiffTab({
             label="files"
             meta={narrowed ? `${shown} / ${files?.length ?? 0}` : files?.length ?? ''}
             onCollapse={() => setTreeFold(true)}
+            filter={{ open: filesFilter, active: terms.length > 0, onToggle: toggleFilesFilter }}
           />
-          {/* the filter narrows the tree that is already here, so it belongs
-              to the column rather than to the toolbar over the whole window */}
-          <div className="tw-filter">
-            <input
-              className="tw-filter-input"
-              placeholder="filter files…"
-              value={filter}
-              spellCheck={false}
-              onChange={(e) => setFilter(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') setFilter('')
-              }}
-            />
-            {!!filter && (
-              <button className="tw-filter-clear" onClick={() => setFilter('')} title="clear the filter (esc)">
-                ×
-              </button>
-            )}
-          </div>
+          {filesFilter && <PaneFilter value={filter} onChange={setFilter} placeholder="filter files…" />}
           <div className="sb-tree" ref={treeBox}>
         {files === null && <div className="empty small">loading…</div>}
         {!!terms.length && !shown && files?.length ? (
