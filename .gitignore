@@ -1,4 +1,6 @@
 /bin/
+/grove
+/grove.exe
 ui/node_modules/
 ui/.build-stamp
 .playwright-mcp/

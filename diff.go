@@ -414,7 +414,7 @@ func changedFiles(root, forkPoint string, ignore bool) ([]DiffFile, error) {
 // change is already there. Uncommitted work is never on ref and stays
 // unmarked, as does everything when the merge cannot be formed at all.
 func markLanded(root, ref string, files []DiffFile) {
-	cmd := exec.Command("git", "merge-tree", "--write-tree", ref, "HEAD")
+	cmd := exec.Command(gitExe, "merge-tree", "--write-tree", ref, "HEAD")
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
@@ -511,7 +511,7 @@ func fileDiff(root, path string, untracked bool, spec scopeSpec, ignore bool) (s
 	if !untracked {
 		args = append(args[:len(args)-2], append(ignoreArgs(ignore), args[len(args)-2:]...)...)
 	}
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command(gitExe, args...)
 	cmd.Dir = root
 	out, err := cmd.Output()
 	// --no-index exits 1 whenever there IS a difference, which is the normal

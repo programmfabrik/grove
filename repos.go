@@ -83,11 +83,12 @@ func readRepo(path string) Repo {
 	// resolve to the main repo, so scanning a directory that holds a linked
 	// worktree does not list it as a repository of its own
 	if common, err := git(path, "rev-parse", "--git-common-dir"); err == nil {
+		common = normPath(common)
 		if !filepath.IsAbs(common) {
 			common = filepath.Join(path, common)
 		}
 		if abs, err := filepath.Abs(filepath.Dir(common)); err == nil {
-			r.Path, r.Name = abs, filepath.Base(abs)
+			r.Path, r.Name = normPath(abs), filepath.Base(abs)
 		}
 	}
 	r.Branch, _ = git(r.Path, "symbolic-ref", "--quiet", "--short", "HEAD")
@@ -135,19 +136,22 @@ func lastUsed(repo string) string {
 // it, not the repo alone.
 func startDir(explicit string) (string, error) {
 	if explicit != "" {
-		return filepath.Abs(explicit)
+		abs, err := filepath.Abs(explicit)
+		return normPath(abs), err
 	}
 	wd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
 	if common, err := git(wd, "rev-parse", "--git-common-dir"); err == nil {
+		common = normPath(common)
 		if !filepath.IsAbs(common) {
 			common = filepath.Join(wd, common)
 		}
 		if repo, err := filepath.Abs(filepath.Dir(common)); err == nil {
-			return filepath.Dir(repo), nil
+			return normPath(filepath.Dir(repo)), nil
 		}
 	}
-	return filepath.Abs(wd)
+	abs, err := filepath.Abs(wd)
+	return normPath(abs), err
 }

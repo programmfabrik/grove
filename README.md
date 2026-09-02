@@ -25,16 +25,32 @@ go install github.com/programmfabrik/grove@latest
 cd ~/src && grove          # http://localhost
 ```
 
-It needs `git` on the path, nothing else. Started with no arguments it takes
-the working directory, or its repo's parent when started inside a checkout —
-so `cd myrepo && grove` lists everything next to myrepo, not myrepo alone.
-`-dir` overrides. `:80` is what makes it `http://localhost`; it binds
-unprivileged on macOS as long as the address is the wildcard. Elsewhere, or
-when the port is taken, `-addr :8000`.
+macOS, Windows and Linux — CI builds and tests all three on every push.
+
+It needs `git` on the path, nothing else, and says so and stops when it is
+missing rather than serving a dashboard of empty panes. On Windows it also
+looks where Git for Windows installs itself, since a program started from an
+icon does not always inherit the PATH entry that puts git there.
+
+Started with no arguments it takes the working directory, or its repo's parent
+when started inside a checkout — so `cd myrepo && grove` lists everything next
+to myrepo, not myrepo alone. `-dir` overrides.
+
+**Where it listens.** Port 80 is what makes it `http://localhost`, and macOS
+lets an unprivileged process bind it. Linux keeps everything under 1024 for
+root and on Windows http.sys may already hold it, so when the default cannot
+be had grove moves to `127.0.0.1:7433` and prints where it went. An explicit
+`-addr` is taken literally: you named a port, and quietly using a different one
+would be a lie about where the dashboard is.
+
+It binds the loopback interface and not the wildcard. grove reads every
+repository on the machine and has one endpoint that deletes untracked files, so
+a dashboard the rest of the network can reach is not a default anybody asked
+for. `-addr :80` restores it for whoever wants it.
 
 | flag | default | |
 | --- | --- | --- |
-| `-addr` | `:80` | listen address |
+| `-addr` | `127.0.0.1:80`, or `127.0.0.1:7433` when that is taken | listen address |
 | `-dir` | the working directory, or its repo's parent | the directory holding the repositories |
 | `-base` | the branch of the main checkout | what ahead/behind and the branch diff compare against |
 | `-refresh` | `20s` | how often the worktrees are re-scanned |
@@ -347,7 +363,8 @@ left where it is and clicking never yanks the list.
 
 ```sh
 make build        # rebuild ui/dist if the UI sources changed, then bin/grove
-make run          # …and start it on http://localhost (ADDR=:8000 to move it)
+make run          # …and start it (ADDR=127.0.0.1:8000 to pick the address)
+make test         # go vet and the tests
 ```
 
 `ui/dist` is committed, so `go install` and a plain `go build` work without
@@ -355,6 +372,13 @@ node. Change something under `ui/` and `make ui` rebuilds the bundle — decided
 by a content hash over the sources, so it is a no-op when nothing changed —
 and the rebuilt `ui/dist` goes into the same commit as the change. CI builds
 the UI from source and warns when the committed bundle differs.
+
+The tests need git on the path and build real repositories in a temp
+directory: `go test ./...` covers the path spellings, the natural sort, the two
+path guards that stand between the browser and git, and one pass over every
+endpoint the dashboard calls — against a checkout with a committed, a staged
+and an untracked file, since an untracked file is diffed against `/dev/null`,
+a name Windows does not have and git special-cases anyway.
 
 For UI work run the Go side and vite side by side; vite proxies `/api` to
 `localhost:80` (`ui/vite.config.ts`):
@@ -374,6 +398,7 @@ cd ui && npm run dev
 | `lines.go` | `/api/lines` — the unchanged lines the hunk expanders pull in, and whole files for the colouring and the rendering |
 | `preview.go` | `/api/blob` — bytes of a renderable file, at either revision |
 | `revert.go` | `/api/revert` — unstage and discard |
+| `paths.go` | the one spelling a path is kept in — see below |
 | `ui.go` | the embedded SPA |
 | `ui/` | vite + React 18 + TypeScript; highlight.js, marked and DOMPurify in lazy chunks |
 | `ui/src/components/Sidebar.tsx` | the checkout's head, and the diff under it |
@@ -382,6 +407,22 @@ cd ui && npm run dev
 | `ui/src/components/FileDiff.tsx` | one file's diff, its expanders and its preview |
 | `ui/src/components/Markdown.tsx` | the rendered reading of a markdown file, before and after |
 | `ui/src/lib/highlight.ts`, `lib/md.ts` | the lazily loaded highlighter and markdown renderer |
+
+### Paths
+
+A path reaches grove from two directions and they do not spell it the same
+way. git prints forward slashes on every platform, so a worktree on Windows
+comes back as `C:/Users/x/src/repo` while Go builds `C:\Users\x\src\repo`;
+and git reports the *physical* path, so a repository reached through a symlink
+comes out of `git worktree list` at its real location while grove still holds
+the link. macOS puts `/tmp` behind such a link, and a `~/src` on a second
+volume is a common enough layout.
+
+Neither is cosmetic. The main checkout is recognised by comparing the worktree
+path git printed against the repo path grove built, so either mismatch makes a
+repository look as though it had no main checkout — and lists it twice, once
+under each spelling. So a path is normalised the moment it enters, from either
+side, and everything downstream compares normalised paths (`paths.go`).
 
 grove grew up inside [fylr](https://github.com/programmfabrik/fylr) as a tool
 over its two dozen worktrees, and moved out once nothing in it was fylr's any

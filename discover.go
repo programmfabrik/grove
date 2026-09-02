@@ -4,8 +4,10 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -92,17 +94,17 @@ func worktreePaths(repo string) ([]string, error) {
 	var paths []string
 	for _, line := range strings.Split(out, "\n") {
 		if p, ok := strings.CutPrefix(line, "worktree "); ok {
-			paths = append(paths, p)
+			paths = append(paths, normPath(p)) // git's spelling, in the OS's
 		}
 	}
 	if len(paths) == 0 {
 		return nil, fmt.Errorf("git worktree list returned no checkout")
 	}
 	slices.SortStableFunc(paths, func(a, b string) int {
-		if a == repo {
+		if samePath(a, repo) {
 			return -1 // main first
 		}
-		if b == repo {
+		if samePath(b, repo) {
 			return 1
 		}
 		return naturalCompare(filepath.Base(a), filepath.Base(b))
@@ -147,7 +149,7 @@ func scanCheckout(ctx context.Context, repo, path, base string) Checkout {
 		Name:   filepath.Base(path),
 		Path:   path,
 		Repo:   filepath.Base(repo),
-		IsMain: path == repo,
+		IsMain: samePath(path, repo),
 	}
 	if b, err := git(path, "symbolic-ref", "--quiet", "--short", "HEAD"); err == nil && b != "" {
 		c.Branch = b
@@ -176,9 +178,68 @@ func scanCheckout(ctx context.Context, repo, path, base string) Checkout {
 	return c
 }
 
+// gitExe is the git binary every call runs, resolved once by findGit. A PATH
+// lookup per invocation is waste when a refresh makes hundreds of them, and
+// resolving up front is what lets grove say "no git" once and clearly.
+var gitExe = "git"
+
+// findGit resolves git and proves it runs. Without git grove has nothing to
+// show, and the failure has to be legible: the repo scan only stats .git, so a
+// machine without git produced a full list of repositories and empty
+// everything else — a dashboard that looks broken rather than one that says
+// what is missing.
+func findGit() error {
+	p, err := exec.LookPath("git")
+	if err != nil {
+		if p = fallbackGit(); p == "" {
+			return fmt.Errorf("git is not on the PATH%s", installHint())
+		}
+	}
+	// LookPath found a file; only running it proves it works. On macOS
+	// /usr/bin/git is a stub that fails until the command line tools are there.
+	if err := exec.Command(p, "--version").Run(); err != nil {
+		return fmt.Errorf("%s does not run: %w%s", p, err, installHint())
+	}
+	gitExe = p
+	return nil
+}
+
+// fallbackGit is where Windows keeps git when it is not on the PATH. Git for
+// Windows installs into Program Files, and a process started from an icon
+// rather than a shell does not always inherit the PATH entry that puts it
+// there — which is exactly the case the desktop build will be in.
+func fallbackGit() string {
+	if runtime.GOOS != "windows" {
+		return ""
+	}
+	for _, env := range []string{"ProgramFiles", "ProgramFiles(x86)", "LocalAppData"} {
+		dir := os.Getenv(env)
+		if dir == "" {
+			continue // filepath.Join would make the candidate relative to the cwd
+		}
+		p := filepath.Join(dir, "Git", "cmd", "git.exe")
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return p
+		}
+	}
+	return ""
+}
+
+// installHint names the usual cure, per platform.
+func installHint() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "\n  install the command line tools: xcode-select --install"
+	case "windows":
+		return "\n  install Git for Windows: https://git-scm.com/download/win"
+	default:
+		return "\n  install git with your package manager"
+	}
+}
+
 // git runs a git command in dir and returns its trimmed stdout.
 func git(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command(gitExe, args...)
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {

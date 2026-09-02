@@ -8,9 +8,9 @@ UI_DIR   := ui
 UI_STAMP := $(UI_DIR)/.build-stamp
 UI_HASH   = find $(UI_DIR)/src $(UI_DIR)/index.html $(UI_DIR)/package-lock.json \
 	$(UI_DIR)/vite.config.ts $(UI_DIR)/tsconfig.json -type f | sort | xargs cat | $(SHA256) | cut -d" " -f1
-ADDR     ?= :80
+ADDR     ?=
 
-.PHONY: ui build run clean help
+.PHONY: ui build run test clean help
 
 ui: ## rebuild ui/dist if the UI sources changed (no-op when current)
 	@want=$$($(UI_HASH)); have=$$(cat $(UI_STAMP) 2>/dev/null || true); \
@@ -20,8 +20,11 @@ ui: ## rebuild ui/dist if the UI sources changed (no-op when current)
 build: ui ## build bin/grove
 	go build -o bin/grove .
 
-run: build ## build and start on http://localhost (ADDR=:8000 to move it)
-	./bin/grove -addr $(ADDR)
+run: build ## build and start it (ADDR=127.0.0.1:8000 to pick the address)
+	./bin/grove $(if $(ADDR),-addr $(ADDR))
+
+test: ## go vet and the tests (they need git on the path)
+	go vet ./... && go test ./...
 
 clean: ## remove the binary and the UI build stamp (ui/dist stays: it is committed)
 	rm -rf bin $(UI_STAMP)

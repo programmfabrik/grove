@@ -61,7 +61,7 @@ type grove struct {
 
 func main() {
 	var (
-		addr = flag.String("addr", ":80", "listen address (\":80\" makes the dashboard http://localhost)")
+		addr = flag.String("addr", defaultAddr, "listen address (loopback, so nothing off this machine can reach it)")
 		opt  options
 		open = flag.Bool("open", false, "open the dashboard in the browser once it listens")
 	)
@@ -69,6 +69,13 @@ func main() {
 	flag.StringVar(&opt.base, "base", "", "branch the checkouts are compared against (default: the branch of the main checkout)")
 	flag.DurationVar(&opt.refresh, "refresh", 20*time.Second, "how often the worktrees are re-scanned with git")
 	flag.Parse()
+
+	// Everything grove shows comes out of git, startDir included, so resolve it
+	// before the first call rather than serving a dashboard of empty panes.
+	if err := findGit(); err != nil {
+		fmt.Fprintf(os.Stderr, "grove: %v\n", err)
+		os.Exit(1)
+	}
 
 	dir, err := startDir(opt.dir)
 	if err != nil {
@@ -90,19 +97,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	srv := &http.Server{Addr: *addr, Handler: d.routes()}
-	ln, err := net.Listen("tcp", *addr)
+	srv := &http.Server{Handler: d.routes()}
+	ln, err := listen(*addr, fallbackAddr, isSet("addr"))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "grove: cannot listen on %s: %v\n", *addr, err)
-		if strings.Contains(err.Error(), "address already in use") {
-			fmt.Fprintf(os.Stderr, "  something else holds the port. Try -addr :8000\n")
-		}
+		fmt.Fprintf(os.Stderr, "  something else holds the port. Try -addr %s\n", fallbackAddr)
 		os.Exit(1)
 	}
-	url := "http://localhost"
-	if _, port, err := net.SplitHostPort(*addr); err == nil && port != "80" {
-		url += ":" + port
-	}
+	url := dashboardURL(ln)
 	fmt.Printf("grove: %s  —  %d repositories in %s\n", url, len(repos), dir)
 	if *open {
 		go openBrowser(url)
@@ -233,7 +235,7 @@ func (d *grove) checkout(name string) (Checkout, bool) {
 		}
 		for _, line := range strings.Split(out, "\n") {
 			p, ok := strings.CutPrefix(line, "worktree ")
-			if !ok || filepath.Base(p) != name {
+			if !ok || filepath.Base(normPath(p)) != name {
 				continue
 			}
 			d.repoStateFor(context.Background(), r.Path)
@@ -290,7 +292,73 @@ func writeErr(w http.ResponseWriter, code int, err error) {
 
 func openBrowser(url string) {
 	time.Sleep(200 * time.Millisecond)
-	if runtime.GOOS == "darwin" {
+	switch runtime.GOOS {
+	case "darwin":
 		exec.Command("open", url).Run()
+	case "windows":
+		// not `cmd /c start`: it takes the first quoted argument as the window
+		// title, and a URL with an & in it ends the command there
+		exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Run()
+	default:
+		exec.Command("xdg-open", url).Run()
 	}
+}
+
+// defaultAddr binds the loopback interface, not the wildcard: grove reads
+// every repository on the machine and has one endpoint that deletes untracked
+// files, so a dashboard reachable from the network is not a default anybody
+// asked for. `-addr :80` restores it for whoever wants it.
+//
+// Port 80 is what makes the address http://localhost. macOS lets an
+// unprivileged process bind it; the other two often do not, which is what
+// fallbackAddr is for.
+const (
+	defaultAddr  = "127.0.0.1:80"
+	fallbackAddr = "127.0.0.1:7433"
+)
+
+// isSet reports whether a flag was given on the command line, as opposed to
+// holding its default.
+func isSet(name string) bool {
+	found := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
+}
+
+// listen binds addr, and lets the DEFAULT move. Port 80 belongs to root on
+// Linux and http.sys can hold it on Windows, and refusing to start is a worse
+// answer than starting somewhere else and saying so. An explicit -addr is
+// taken literally: the user named a port, and quietly using another would be a
+// lie about where the dashboard is.
+func listen(addr, fallback string, explicit bool) (net.Listener, error) {
+	ln, err := net.Listen("tcp", addr)
+	if err == nil || explicit {
+		return ln, err
+	}
+	if alt, err2 := net.Listen("tcp", fallback); err2 == nil {
+		return alt, nil
+	}
+	return nil, err // the first failure is the one worth reporting
+}
+
+// dashboardURL is what to type into a browser, read off the listener rather
+// than off the requested address — the port may have moved, and a port of 0
+// does not name one at all until it is bound.
+func dashboardURL(ln net.Listener) string {
+	host, port, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		return "http://localhost"
+	}
+	switch host {
+	case "", "0.0.0.0", "::", "127.0.0.1", "::1":
+		host = "localhost"
+	}
+	if port == "80" {
+		return "http://" + host
+	}
+	return "http://" + net.JoinHostPort(host, port)
 }

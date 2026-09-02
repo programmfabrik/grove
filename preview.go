@@ -182,13 +182,18 @@ func blobRev(spec scopeSpec, before bool) (rev string, fromWorktree bool) {
 
 // gitBlob reads one path at one revision out of the object store.
 func gitBlob(root, rev, path string) ([]byte, error) {
-	// rev ":" means the index, and git spells that ":path" — the same
-	// concatenation, which is why it needs no case of its own
-	cmd := exec.Command("git", "show", rev+":"+path)
+	// rev ":" is the index, and git spells that ":path" — ONE colon. Joining
+	// it to the path with another produces "::path", which git rejects, so the
+	// index needs the case it looks like it does not.
+	spec := rev + ":" + path
+	if rev == ":" {
+		spec = ":" + path
+	}
+	cmd := exec.Command(gitExe, "show", spec)
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("git show %s:%s: %w", rev, path, err)
+		return nil, fmt.Errorf("git show %s: %w", spec, err)
 	}
 	return out, nil
 }
