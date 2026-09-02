@@ -33,9 +33,20 @@ export function WorktreeList({
               <Hits text={c.name} terms={terms} />
             </span>
             <span className="gitstat" title={`${c.ahead} ahead of ${base}, ${c.behind} behind, ${c.dirty} uncommitted`}>
-              <span className={c.ahead ? 'ahead on' : 'ahead'}>↑{c.ahead}</span>
-              <span className={c.behind ? 'behind on' : 'behind'}>↓{c.behind}</span>
-              <span className={c.dirty ? 'dirty on' : 'dirty'}>●{c.dirty}</span>
+              {/* the glyph is a label, not a digit: it gets its own breathing
+                  room rather than sitting flush against the count */}
+              <span className={c.ahead ? 'ahead on' : 'ahead'}>
+                <i>↑</i>
+                {c.ahead}
+              </span>
+              <span className={c.behind ? 'behind on' : 'behind'}>
+                <i>↓</i>
+                {c.behind}
+              </span>
+              <span className={c.dirty ? 'dirty on' : 'dirty'}>
+                <i>●</i>
+                {c.dirty}
+              </span>
             </span>
           </div>
           <div className="wl-sub">

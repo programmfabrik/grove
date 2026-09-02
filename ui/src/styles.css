@@ -186,6 +186,10 @@ a { color: var(--accent-ink); }
 .branch { font-size: 12px; color: var(--dim); max-width: 250px; overflow: hidden; text-overflow: ellipsis; }
 
 .gitstat { display: inline-flex; gap: 7px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--dim); }
+/* the arrow and the dot are labels rather than digits, and flush against the
+   count they read as one token — ●29 rather than 29 uncommitted */
+.gitstat i { font-style: normal; margin-right: 2.5px; }
+.gitstat .dirty i { font-size: 0.85em; vertical-align: 1px; }
 .gitstat .on.ahead { color: var(--running); font-weight: 600; }
 .gitstat .on.behind { color: var(--warn); font-weight: 600; }
 .gitstat .on.dirty { color: var(--danger); font-weight: 600; }
