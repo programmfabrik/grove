@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -35,6 +36,8 @@ const (
 )
 
 func run(d *grove, addr string, explicit, _ bool) error {
+	rememberOrRecallDir(d)
+
 	ln, err := listenDesktop(addr, explicit)
 	if err != nil {
 		return err
@@ -105,6 +108,28 @@ func desktopMenu(app *application.App, d *grove, win application.Window, url str
 	return menu
 }
 
+// rememberOrRecallDir settles which directory the window opens on. A command
+// is started in the directory it is meant to show; an application is started
+// from an icon, in `/`, where there is nothing to show and never will be. So
+// the working directory wins when it actually holds repositories — which is
+// what a launch from a terminal means — and otherwise the last directory this
+// app was pointed at does. An explicit -dir beats both and is not recorded,
+// since it was a one-off instruction rather than a change of mind.
+func rememberOrRecallDir(d *grove) {
+	if isSet("dir") {
+		return
+	}
+	if len(d.reposList(context.Background())) == 0 {
+		if last := loadSettings().Dir; last != "" {
+			// an error here means the remembered directory is gone too, and
+			// the window opens empty with Open Folder… waiting
+			d.setDir(last)
+		}
+		return
+	}
+	settings{Dir: d.dir()}.save()
+}
+
 // chooseFolder is what makes the window an application rather than a page:
 // without it the directory can only come from the shell that started grove,
 // and an app is not started from a shell.
@@ -122,6 +147,7 @@ func chooseFolder(app *application.App, d *grove, win application.Window, url st
 		app.Dialog.Error().SetMessage(err.Error()).Show()
 		return
 	}
+	settings{Dir: d.dir()}.save() // so the next launch from the icon lands here
 	// SetURL rather than Reload: the fragment names a repo, a worktree and a
 	// file of the directory just left, and none of them is there any more
 	win.SetURL(url)

@@ -64,9 +64,16 @@ every other name in a menu bar — which is also why the binary is capitalised,
 since an unbundled program is named in the menu bar by its executable.
 
 ```sh
-make app          # bin/Grove
+make app          # bin/Grove.app on macOS, bin/Grove elsewhere
 make app-windows  # bin/Grove.exe, cross-built from anywhere
+open bin/Grove.app
 ```
+
+On macOS the executable is wrapped in a bundle, because a bare executable is
+not an application there: launched from a shell it dies with that shell, it
+has no icon, and the menu bar names it after the file. `Grove.icns` is
+committed rather than converted during the build — the same bargain `ui/dist`
+strikes, one less tool to have installed.
 
 macOS and Windows. Linux gets the command above and a browser for now — its
 webview wants cgo and a webkitgtk whose version differs per distribution, and
@@ -88,7 +95,13 @@ back an empty dashboard each time.
 
 **File → Open Folder…** points it at another directory of repositories, which
 is what an app needs and a command does not: a command is started in the
-directory it is meant to show, and an app is started from an icon.
+directory it is meant to show, and an app is started from an icon — in `/`,
+where there is nothing to show and never will be. So the app writes the
+directory down (`settings.go`, in Application Support / `%AppData%` /
+`$XDG_CONFIG_HOME`) and opens there next time. The working directory still
+wins when it actually holds repositories, which is what a launch from a
+terminal means, and an explicit `-dir` beats both without being recorded — it
+was a one-off instruction rather than a change of mind.
 
 Both binaries hold the same server and the same dashboard; only the front door
 differs (`front_cli.go`, `front_desktop.go`). The default build has no window
@@ -441,6 +454,8 @@ cd ui && npm run dev
 | `paths.go` | the one spelling a path is kept in — see below |
 | `front_cli.go` | the default front door: serve it and say where it is |
 | `front_desktop.go` | `-tags desktop` — the window, its menu and the folder dialog |
+| `settings.go` | the one thing the app remembers and the command never needs: where to look |
+| `packaging/macos/` | the bundle's Info.plist and icon |
 | `ui.go` | the embedded SPA |
 | `ui/` | vite + React 18 + TypeScript; highlight.js, marked and DOMPurify in lazy chunks |
 | `ui/src/components/Sidebar.tsx` | the checkout's head, and the diff under it |
