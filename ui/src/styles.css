@@ -571,6 +571,26 @@ a { color: var(--accent-ink); }
 .md pre.md-b-add, .md pre.md-b-del, .md pre.md-b-chg { padding-left: 12px; }
 .md ins.md-w-add { text-decoration: none; background: color-mix(in srgb, var(--diff-add-ink) 30%, transparent); border-radius: 2px; }
 .md del.md-w-del { text-decoration: none; background: color-mix(in srgb, var(--diff-del-ink) 30%, transparent); border-radius: 2px; }
+/* the stop the ↑ ↓ just went to, said once and then gone */
+.md .md-b-at { animation: md-flash 1.1s ease-out; }
+@keyframes md-flash {
+  from { box-shadow: inset 3px 0 0 var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent); }
+  to { box-shadow: inset 3px 0 0 transparent, 0 0 0 3px transparent; }
+}
+/* walking the changes: which one, and the way to the next */
+.md-nav {
+  grid-column: 1 / -1; position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  padding: 4px 2px; font-size: 11px;
+  background: color-mix(in srgb, var(--card) 92%, transparent); backdrop-filter: blur(6px);
+}
+.md-nav .ex-btn { padding: 0 7px; }
+/* an image the browser could not fetch: its alt text, in the space it wanted */
+.md img.md-img-broken {
+  display: inline-block; min-width: 90px; padding: 5px 9px;
+  border: 1px dashed var(--border); border-radius: 6px;
+  color: var(--dim); font-size: 11px; font-style: italic;
+}
 
 /* ── filter term colours ─────────────────────────────────────────────── */
 /* one colour per term, cycling; the term in the input and its hits in the

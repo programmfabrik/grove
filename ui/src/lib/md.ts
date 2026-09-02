@@ -79,7 +79,10 @@ export function resolvePath(fromFile: string, rel: string): string | undefined {
 
 type Op = { type: 'eq' | 'del' | 'ins'; i: number; j: number }
 
-export function diffRendered(beforeHtml: string, afterHtml: string): { before: string; after: string } {
+export function diffRendered(
+  beforeHtml: string,
+  afterHtml: string,
+): { before: string; after: string; changes: number } {
   const parse = (html: string) => {
     const div = document.createElement('div')
     div.innerHTML = html
@@ -89,9 +92,10 @@ export function diffRendered(beforeHtml: string, afterHtml: string): { before: s
   const b = parse(afterHtml)
   const ua = units(a)
   const ub = units(b)
-  if (ua.length * ub.length > 4_000_000) return { before: beforeHtml, after: afterHtml }
+  if (ua.length * ub.length > 4_000_000) return { before: beforeHtml, after: afterHtml, changes: 0 }
   const ops = lcsOps(ua.map(unitKey), ub.map(unitKey))
   let i = 0
+  let group = 0 // each run of changes is one stop for the viewer's ↑ ↓
   while (i < ops.length) {
     if (ops[i].type === 'eq') {
       i++
@@ -109,8 +113,10 @@ export function diffRendered(beforeHtml: string, afterHtml: string): { before: s
     for (let k = 0; k < pairs; k++) diffWords(dels[k], inss[k])
     for (let k = pairs; k < dels.length; k++) dels[k].classList.add('md-b-del')
     for (let k = pairs; k < inss.length; k++) inss[k].classList.add('md-b-add')
+    for (const el of [...dels, ...inss]) el.setAttribute('data-chg', String(group))
+    group++
   }
-  return { before: a.innerHTML, after: b.innerHTML }
+  return { before: a.innerHTML, after: b.innerHTML, changes: group }
 }
 
 // units are the blocks compared: the top-level elements, with lists and

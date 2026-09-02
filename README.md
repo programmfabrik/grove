@@ -260,6 +260,14 @@ the paragraph, in the line diff's own green and red. YAML front matter is
 shown as metadata, small and dim, rather than as the heading markdown would
 make of it.
 
+A rendered page is the whole file, not the neighbourhood of a change, so the
+changes can sit anywhere in it: a strip over the two panes counts them and
+walks them, `↑` and `↓`, wrapping at either end. The stop flashes so the eye
+finds it, and since a change can stand on both sides at once, the pane scrolls
+to whichever of the pair sits higher. An image the browser cannot fetch — a
+badge from a private repository, a path that resolves on one side only —
+reads as its own alt text in a dashed box rather than as a broken icon.
+
 ![a README rendered before and after, side by side](docs/markdown.png)
 
 The same marker heads the diff itself. One git command covers every range
