@@ -4,135 +4,303 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Grove — every checkout, every worktree, and what each of them changed</title>
-<meta name="description" content="One page over a directory full of git repositories. A desktop app for macOS and Windows, and a command that serves the same dashboard to a browser.">
+<meta name="description" content="One page over a directory full of git repositories. Every checkout, every worktree, and what each of them changed. A desktop app for macOS and Windows, and a command that serves the same dashboard to a browser.">
 <link rel="icon" href="favicon.svg">
+<meta property="og:title" content="Grove">
+<meta property="og:description" content="One page over a directory full of git repositories.">
+<meta property="og:image" content="https://programmfabrik.github.io/grove/shots/dashboard.webp">
+<meta name="twitter:card" content="summary_large_image">
 <style>
-/* grove's own palette, so the page and the program are recognisably one thing */
+/* Dark throughout — the page is a picture of a dark dashboard, and a light
+   page around it would be a frame that fights the picture. grove's own
+   palette, so the site and the program are recognisably one thing. */
 :root {
-  --bg: #f6f8fa; --card: #fff; --text: #1f2328; --dim: #6b7280;
-  --border: #d9dee3; --brand: #ff5724; --accent-ink: #c93d12;
-  --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.03);
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d1117; --card: #161b22; --text: #e6edf3; --dim: #8b949e;
-    --border: #2a3038; --accent-ink: #ff8a63;
-    --shadow: 0 1px 3px rgba(0,0,0,.4);
-  }
+  --bg: #08090b;
+  --panel: #101318;
+  --panel-2: #161b22;
+  --line: #232a33;
+  --text: #e6edf3;
+  --dim: #9aa4b1;
+  --dimmer: #6b7684;
+  --brand: #ff5724;
+  --brand-soft: #ff8a63;
+  --green: #3fb950;
+  --amber: #d29922;
+  --blue: #58a6ff;
+  --radius: 12px;
 }
 * { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
-  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased; overflow-x: hidden;
 }
-.wrap { max-width: 720px; margin: 0 auto; padding: 64px 24px 80px; }
-header { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
-header svg { width: 44px; height: 44px; flex: none; }
-h1 { font-size: 30px; letter-spacing: -.02em; margin: 0; }
-.tagline { font-size: 18px; color: var(--dim); margin: 0 0 40px 58px; }
-@media (max-width: 560px) { .tagline { margin-left: 0; } }
+a { color: var(--brand-soft); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre, .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
 
-.get { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
-       padding: 24px; box-shadow: var(--shadow); }
-.btn {
-  display: inline-block; background: var(--brand); color: #fff; text-decoration: none;
-  font-weight: 600; font-size: 16px; padding: 12px 22px; border-radius: 8px;
+/* ── nav ─────────────────────────────────────────────────────────────── */
+nav {
+  position: sticky; top: 0; z-index: 20;
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: blur(10px); border-bottom: 1px solid var(--line);
 }
-.btn:hover { filter: brightness(1.07); }
-.btn[aria-disabled="true"] { opacity: .55; pointer-events: none; }
-.meta { font-size: 13px; color: var(--dim); margin-top: 10px; }
-.note { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--border); font-size: 14px; }
-.note h3 { font-size: 14px; margin: 0 0 8px; }
-code, pre { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 13px; }
-pre { background: var(--bg); border: 1px solid var(--border); border-radius: 7px;
-      padding: 11px 13px; overflow-x: auto; margin: 10px 0; }
-h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim);
-     margin: 44px 0 14px; }
-table { border-collapse: collapse; width: 100%; font-size: 14px; }
-td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
-td:last-child { color: var(--dim); }
-a { color: var(--accent-ink); }
-footer { margin-top: 48px; font-size: 13.5px; color: var(--dim); }
+nav .wrap { display: flex; align-items: center; gap: 18px; height: 58px; }
+nav .name { font-weight: 700; font-size: 17px; letter-spacing: -.01em; margin-right: auto; display: flex; align-items: center; gap: 10px; }
+nav .name svg { width: 26px; height: 26px; }
+nav a.link { color: var(--dim); font-size: 14.5px; }
+nav a.link:hover { color: var(--text); text-decoration: none; }
+@media (max-width: 620px) { nav a.link.hide-s { display: none; } }
+
+/* ── hero ────────────────────────────────────────────────────────────── */
+.hero { position: relative; padding: 84px 0 40px; text-align: center; }
+.hero::before {
+  content: ""; position: absolute; inset: -120px 0 auto; height: 460px; z-index: -1;
+  background: radial-gradient(60% 60% at 50% 0%, color-mix(in srgb, var(--brand) 20%, transparent), transparent 70%);
+  pointer-events: none;
+}
+h1 { font-size: clamp(34px, 6vw, 56px); line-height: 1.08; letter-spacing: -.03em; margin: 0 0 18px; }
+h1 .accent { color: var(--brand); }
+.sub { font-size: clamp(17px, 2.3vw, 21px); color: var(--dim); max-width: 34em; margin: 0 auto 32px; }
+.cta { display: flex; gap: 12px; justify-content: center; align-items: center; flex-wrap: wrap; }
+.btn {
+  display: inline-block; background: var(--brand); color: #fff; font-weight: 600; font-size: 16px;
+  padding: 13px 26px; border-radius: 9px; border: 1px solid transparent;
+}
+.btn:hover { filter: brightness(1.08); text-decoration: none; }
+.btn[aria-disabled="true"] { opacity: .5; pointer-events: none; }
+.btn-2 { background: transparent; color: var(--text); border-color: var(--line); }
+.btn-2:hover { border-color: var(--dimmer); filter: none; }
+.cta-meta { width: 100%; font-size: 13.5px; color: var(--dimmer); margin-top: 4px; }
+
+/* ── screenshots ─────────────────────────────────────────────────────── */
+.shot {
+  border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+  background: var(--panel); box-shadow: 0 24px 70px rgba(0,0,0,.55);
+}
+.shot img { display: block; width: 100%; height: auto; }
+.hero-shot { margin: 46px 0 0; }
+figure { margin: 0; }
+figcaption { font-size: 13.5px; color: var(--dimmer); margin-top: 11px; }
+
+/* ── sections ────────────────────────────────────────────────────────── */
+section { padding: 74px 0; border-top: 1px solid var(--line); scroll-margin-top: 58px; }
+section:first-of-type { border-top: 0; }
+h2 { font-size: clamp(24px, 3.4vw, 32px); letter-spacing: -.02em; margin: 0 0 14px; }
+h3 { font-size: 18px; margin: 0 0 8px; letter-spacing: -.01em; }
+.lede { font-size: 17.5px; color: var(--dim); max-width: 46em; margin: 0 0 34px; }
+p { max-width: 46em; }
+.eyebrow { font-size: 12.5px; text-transform: uppercase; letter-spacing: .12em; color: var(--brand); font-weight: 600; margin: 0 0 12px; }
+
+.panes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-bottom: 40px; }
+.pane { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; }
+.pane .n { font-size: 12px; color: var(--dimmer); font-weight: 600; letter-spacing: .1em; }
+.pane p { color: var(--dim); font-size: 14.5px; margin: 6px 0 0; }
+@media (max-width: 760px) { .panes { grid-template-columns: 1fr; } }
+
+.feature { display: grid; grid-template-columns: 1fr; gap: 26px; margin-top: 46px; }
+.feature + .feature { margin-top: 64px; }
+.grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+@media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; }
+.card p { color: var(--dim); font-size: 14.5px; margin: 0; }
+
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; vertical-align: middle; margin-right: 7px; }
+.dot.a { background: var(--amber); } .dot.b { background: var(--blue); } .dot.g { background: var(--dimmer); }
+ul.plain { list-style: none; padding: 0; margin: 0; }
+ul.plain li { padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14.5px; color: var(--dim); }
+ul.plain li:last-child { border-bottom: 0; }
+ul.plain b { color: var(--text); font-weight: 600; }
+
+pre {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 9px;
+  padding: 14px 16px; overflow-x: auto; font-size: 13.5px; color: var(--text); margin: 14px 0;
+}
+pre .c { color: var(--dimmer); }
+
+/* ── download ────────────────────────────────────────────────────────── */
+#download .box { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 28px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; margin-top: 8px; }
+td { padding: 10px 12px 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+td:last-child { color: var(--dimmer); }
+.warn { border-left: 3px solid var(--amber); padding-left: 16px; margin: 22px 0 0; }
+.warn h3 { color: var(--amber); font-size: 14px; text-transform: uppercase; letter-spacing: .08em; }
+.warn p, .warn li { font-size: 14.5px; color: var(--dim); }
+
+footer { border-top: 1px solid var(--line); padding: 44px 0 70px; color: var(--dimmer); font-size: 14px; }
+footer a { color: var(--dim); }
 </style>
 </head>
 <body>
-<div class="wrap">
 
-<header>
-  <svg viewBox="0 0 32 32" aria-hidden="true">
-    <rect width="32" height="32" rx="7" fill="#ff5724"/>
-    <g stroke="#fff" stroke-width="2.4" stroke-linecap="round" fill="none">
-      <path d="M10 8v16"/><path d="M10 13h7a3 3 0 0 1 3 3v0"/><path d="M10 19h4a3 3 0 0 0 3-3v0"/>
-    </g>
-  </svg>
-  <h1>Grove</h1>
-</header>
-<p class="tagline">Every checkout, every worktree, and what each of them changed — on one page.</p>
+<nav><div class="wrap">
+  <span class="name">
+    <svg viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="7" fill="#ff5724"/>
+      <g stroke="#fff" stroke-width="2.4" stroke-linecap="round" fill="none">
+        <path d="M10 8v16"/><path d="M10 13h7a3 3 0 0 1 3 3v0"/><path d="M10 19h4a3 3 0 0 0 3-3v0"/>
+      </g>
+    </svg>Grove
+  </span>
+  <a class="link hide-s" href="#what">What it does</a>
+  <a class="link hide-s" href="#diff">The diff</a>
+  <a class="link" href="#download">Download</a>
+  <a class="link" href="https://github.com/programmfabrik/grove">GitHub</a>
+</div></nav>
 
-<div class="get">
-  <a class="btn" id="dl" href="https://github.com/programmfabrik/grove/releases/latest" aria-disabled="true">Loading…</a>
-  <div class="meta" id="meta">Finding the latest release…</div>
-
-  <div class="note" id="firstrun" hidden>
-    <h3 id="firstrun-title"></h3>
-    <div id="firstrun-body"></div>
+<header class="hero"><div class="wrap">
+  <h1>Every checkout, every worktree,<br>and <span class="accent">what each of them changed</span></h1>
+  <p class="sub">One page over a directory full of git repositories. Two dozen worktrees stop being
+     two dozen terminals.</p>
+  <div class="cta">
+    <a class="btn" id="dl" href="https://github.com/programmfabrik/grove/releases/latest" aria-disabled="true">Loading…</a>
+    <a class="btn btn-2" href="#download">All downloads</a>
+    <div class="cta-meta" id="meta">Finding the latest release…</div>
   </div>
-</div>
+  <figure class="shot hero-shot">
+    <img src="shots/dashboard.webp" width="1600" height="1000" alt="Grove: the repos, the worktrees of one of them, the scope column, the file tree, and a diff with syntax colours" fetchpriority="high">
+  </figure>
+</div></header>
 
-<h2>Or with Homebrew</h2>
-<p>Which skips the quarantine business entirely, and makes <code>brew upgrade</code> work:</p>
+<section id="what"><div class="wrap">
+  <p class="eyebrow">Three panes</p>
+  <h2>Each one narrows what the next one shows</h2>
+  <p class="lede">A directory full of clones is how the work is actually laid out — the main project
+     next to the libraries it uses next to two dozen plugin repos. Which of them is interesting
+     changes by the hour.</p>
+  <div class="panes">
+    <div class="pane"><div class="n">01 — REPOS</div><h3>Every repository</h3>
+      <p>Sorted by how much is checked out, then by when it was last worked in. Not when it was last
+         <em>read</em>: scanning a repo touches <code>.git</code>, and a dashboard that made every repo
+         look freshly used would be worse than none.</p></div>
+    <div class="pane"><div class="n">02 — WORKTREES</div><h3>The checkouts of one</h3>
+      <p>Branch, distance from the base branch, how much is uncommitted. Linked worktrees are found
+         wherever they live, a sibling directory included.</p></div>
+    <div class="pane"><div class="n">03 — VIEWER</div><h3>What it changed</h3>
+      <p>What is known about the checkout in the head, and its diff below. Every pane refreshes
+         itself — commit in a terminal and the diff follows without a click.</p></div>
+  </div>
+  <p>Nothing compares against a hardcoded <code>main</code>. The base is the branch checked out in the
+     main repo, so putting a release branch there makes every number and every diff follow it, with no
+     flag to remember.</p>
+</div></section>
+
+<section id="diff"><div class="wrap">
+  <p class="eyebrow">The diff</p>
+  <h2>What to diff, which file, and the diff</h2>
+  <p class="lede">A worktree has several honest answers to “what changed here”, and it needs all of
+     them. Each is one entry in the scope column, carrying its own file count and <code>+</code>/<code>−</code>.</p>
+
+  <div class="grid2">
+    <div class="card"><h3>Committed and uncommitted, together</h3>
+      <p>Not separate views. A file is listed once and marked with where its change lives, because
+         “what is in this worktree” is the question and whether a line is committed yet is a detail
+         of it.</p></div>
+    <div class="card"><h3>How far a commit has travelled</h3>
+      <p><span class="dot a"></span><b>unpushed</b> — still yours to rewrite.
+         <span class="dot b"></span><b>not in base</b> — pushed, but the base branch has not got it.
+         <span class="dot g"></span>landed, and just history now.</p></div>
+  </div>
+
+  <div class="feature">
+    <figure>
+      <div class="shot"><img src="shots/markdown.webp" width="1600" height="1000" loading="lazy" alt="A markdown file rendered before and after, side by side, with the reworded words marked"></div>
+      <figcaption>A README rendered before and after — matched block by block, then word by word, so a reworded sentence shows the words that moved and not the paragraph.</figcaption>
+    </figure>
+  </div>
+
+  <div class="feature">
+    <figure>
+      <div class="shot"><img src="shots/filters.webp" width="1600" height="1000" loading="lazy" alt="Two filters open, each matched term marked in its own colour"></div>
+      <figcaption>Every column filters itself. The query is whitespace-separated terms in any order, and each term is marked in the colour it wears in the input, so the eye can tell which word found what.</figcaption>
+    </figure>
+  </div>
+
+  <ul class="plain" style="margin-top:44px">
+    <li><b>Syntax colours</b> — each side of a file is highlighted whole, at the scope’s own revision, so a block comment that opens in one hunk and closes in the next is still read correctly.</li>
+    <li><b>Files a browser can render, it renders</b> — images, SVG, PDF, video and audio show as themselves, before and after. A diff of a jpg tells you nothing.</li>
+    <li><b>Hunk expanders</b> — three lines of context is the wrong amount the moment the question is what the code around a change looks like. Every gap opens, twenty lines at a time.</li>
+    <li><b>Unstage and discard</b> — the two actions git actually has for a file, behind a dialog that names the files first. The one place Grove writes.</li>
+    <li><b>Submodules</b> — a checkout that carries them is several repositories, and each gets a section of its own.</li>
+    <li><b>The view lives in the URL</b> — so a reload comes back to where you were, and the address bar is a link to “that file, in that scope, of that worktree”.</li>
+  </ul>
+</div></section>
+
+<section><div class="wrap">
+  <p class="eyebrow">How it works</p>
+  <h2>It reads git, and nothing else</h2>
+  <p class="lede">Grove never starts, stops or reconfigures anything. It runs the same commands you
+     would run yourself, on a loopback port nothing outside the machine can reach, and shows you what
+     they said.</p>
+  <div class="grid2">
+    <div class="card"><h3>No configuration</h3>
+      <p>Point it at a directory of repositories. It needs <code>git</code> on the path and nothing
+         else — no daemon, no index, no account, no telemetry.</p></div>
+    <div class="card"><h3>Lazy and per repo</h3>
+      <p>With dozens of repositories, refreshing all of them on a timer would be waste. A repo is
+         scanned when a request finds its cache stale.</p></div>
+  </div>
+</div></section>
+
+<section id="download"><div class="wrap">
+  <p class="eyebrow">Get it</p>
+  <h2>Download</h2>
+  <p class="lede">macOS and Windows for the app. Linux gets the command, which serves the same
+     dashboard to a browser.</p>
+
+  <div class="box">
+    <h3 style="margin-bottom:14px">With Homebrew, on macOS</h3>
+    <p style="color:var(--dim);font-size:14.5px;margin:0">The tidiest way: no quarantine to clear, and
+       <code>brew upgrade</code> keeps it current.</p>
 <pre>brew tap programmfabrik/grove https://github.com/programmfabrik/grove
 brew install --cask grove</pre>
 
-<h2>Or as a command</h2>
-<p>The same dashboard, served to a browser. Linux gets this one for now.</p>
+    <h3 style="margin:30px 0 6px">As a command, anywhere Go runs</h3>
 <pre>go install github.com/programmfabrik/grove@latest
-cd ~/src &amp;&amp; grove</pre>
+cd ~/src &amp;&amp; grove          <span class="c"># http://localhost</span></pre>
 
-<h2>Every download</h2>
-<table id="assets"><tr><td colspan="2" style="color:var(--dim)">Loading…</td></tr></table>
+    <h3 style="margin:30px 0 6px">Or a file</h3>
+    <table id="assets"><tr><td colspan="2" style="color:var(--dimmer)">Loading…</td></tr></table>
 
-<footer>
-  It reads git and nothing else, and never starts, stops or reconfigures anything.
-  Needs <code>git</code> on the path.
+    <div class="warn">
+      <h3>Opening it the first time</h3>
+      <p>These builds are not signed with a Developer ID, so macOS quarantines them on download and
+         Windows SmartScreen warns about a program it has not seen. Neither says anything about the
+         program; both are the cost of an unsigned build.</p>
+      <p style="margin-top:10px"><b>macOS</b> — after unzipping <code>Grove.app</code> into Applications:</p>
+<pre>xattr -dr com.apple.quarantine /Applications/Grove.app</pre>
+      <p>Without it, Finder shows a warning and <b>System Settings → Privacy &amp; Security → Open
+         Anyway</b> is the way through. Homebrew avoids all of this.</p>
+      <p style="margin-top:10px"><b>Windows</b> — <b>More info → Run anyway</b>.</p>
+    </div>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  Grove grew up inside <a href="https://github.com/programmfabrik/fylr">fylr</a> as a tool over its two
+  dozen worktrees, and moved out once nothing in it was fylr’s any more.
   <br><br>
-  <a href="https://github.com/programmfabrik/grove">Documentation and source on GitHub</a> · MIT
-</footer>
-
-</div>
+  <a href="https://github.com/programmfabrik/grove">Documentation and source</a> ·
+  <a href="https://github.com/programmfabrik/grove/releases">Releases</a> ·
+  MIT
+</div></footer>
 
 <script>
-// The page asks GitHub for the latest release rather than being regenerated
-// with each one: a download page that can go stale is worse than no page.
+// The page asks GitHub for the latest release when it loads rather than being
+// regenerated with each one: a download page that can go stale is worse than
+// no download page.
 const REPO = 'programmfabrik/grove'
 const WHAT = {
-  'Grove-macos-universal.zip': 'The app, Apple Silicon and Intel in one bundle',
+  'Grove-macos-universal.zip': 'The app — Apple Silicon and Intel in one bundle',
   'Grove-windows-amd64.zip': 'The app on Windows',
   'grove-cli-macos-universal.tar.gz': 'The command, either Mac',
   'grove-cli-windows-amd64.zip': 'The command on Windows',
   'grove-cli-linux-amd64.tar.gz': 'The command on Linux, x86-64',
   'grove-cli-linux-arm64.tar.gz': 'The command on Linux, ARM',
   'SHA256SUMS': 'Checksums for all of the above',
-}
-const FIRST_RUN = {
-  mac: ['Opening it the first time', `<p>These builds carry no Developer ID, so macOS quarantines them on
-      download. Unzip <code>Grove.app</code> into Applications, then:</p>
-      <pre>xattr -dr com.apple.quarantine /Applications/Grove.app</pre>
-      <p>Without it, Finder shows a warning and <b>System Settings → Privacy &amp; Security → Open Anyway</b>
-      is the way through. Homebrew above avoids all of this.</p>`],
-  windows: ['Opening it the first time', `<p>SmartScreen warns about a program it has not seen before:
-      <b>More info → Run anyway</b>. That is the cost of an unsigned build and says nothing about the program.</p>`],
-  linux: ['On Linux', `<p>The window is macOS and Windows for now — its webview needs cgo and a webkitgtk
-      whose version differs per distribution. The command serves the same dashboard to your browser.</p>`],
-}
-
-function detect() {
-  const p = (navigator.userAgentData?.platform || navigator.platform || '') + ' ' + navigator.userAgent
-  if (/Mac/i.test(p)) return 'mac'
-  if (/Win/i.test(p)) return 'windows'
-  if (/Linux|X11|Android/i.test(p)) return 'linux'
-  return 'mac'
 }
 const PREFERRED = {
   mac: 'Grove-macos-universal.zip',
@@ -141,16 +309,17 @@ const PREFERRED = {
 }
 const LABEL = { mac: 'Download for macOS', windows: 'Download for Windows', linux: 'Download for Linux' }
 
+function detect() {
+  const p = (navigator.userAgentData?.platform || navigator.platform || '') + ' ' + navigator.userAgent
+  if (/Mac/i.test(p)) return 'mac'
+  if (/Win/i.test(p)) return 'windows'
+  if (/Linux|X11|Android/i.test(p)) return 'linux'
+  return 'mac'
+}
+
 const os = detect()
 const btn = document.getElementById('dl')
 const meta = document.getElementById('meta')
-
-const fr = FIRST_RUN[os]
-if (fr) {
-  document.getElementById('firstrun-title').textContent = fr[0]
-  document.getElementById('firstrun-body').innerHTML = fr[1]
-  document.getElementById('firstrun').hidden = false
-}
 
 fetch(`https://api.github.com/repos/${REPO}/releases/latest`)
   // 404 here is not a failure, it is the honest answer before the first tag
@@ -163,13 +332,17 @@ fetch(`https://api.github.com/repos/${REPO}/releases/latest`)
     btn.href = want ? want.browser_download_url : rel.html_url
     const size = want ? ` · ${(want.size / 1048576).toFixed(1)} MB` : ''
     const when = new Date(rel.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
-    meta.innerHTML = `${rel.tag_name}${size} · released ${when} · <a href="${rel.html_url}">release notes</a>`
+    meta.innerHTML = `${rel.tag_name}${size} · ${when} · <a href="${rel.html_url}">release notes</a>`
 
+    // WHAT's own order, not the API's: the app is the product and belongs at
+    // the top, and alphabetically `Grove-` sorts under `grove-cli-`
+    const order = Object.keys(WHAT)
     const rows = assets
       .filter((a) => a.name in WHAT)
+      .sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name))
       .map((a) => `<tr><td><a href="${a.browser_download_url}">${a.name}</a></td><td>${WHAT[a.name]}</td></tr>`)
     document.getElementById('assets').innerHTML =
-      rows.join('') || '<tr><td colspan="2" style="color:var(--dim)">No downloads on this release.</td></tr>'
+      rows.join('') || '<tr><td colspan="2" style="color:var(--dimmer)">No downloads on this release.</td></tr>'
   })
   .catch((e) => {
     // Two different things, and telling somebody the network failed when the
@@ -177,9 +350,7 @@ fetch(`https://api.github.com/repos/${REPO}/releases/latest`)
     // wrong place. Either way the button goes somewhere rather than nowhere.
     const unreleased = e.message === 'none'
     btn.textContent = unreleased ? 'Build it from source' : 'Downloads on GitHub'
-    btn.href = unreleased
-      ? 'https://github.com/' + REPO + '#install'
-      : 'https://github.com/' + REPO + '/releases'
+    btn.href = unreleased ? 'https://github.com/' + REPO + '#install' : 'https://github.com/' + REPO + '/releases'
     btn.removeAttribute('aria-disabled')
     meta.textContent = unreleased
       ? 'No release published yet — the command below works today.'
