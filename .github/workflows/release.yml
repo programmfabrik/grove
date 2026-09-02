@@ -119,6 +119,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the notes are written from the log since the last tag
       - uses: actions/download-artifact@v4
         with: { path: art }
       - name: gather, and refuse two names that differ only by case
@@ -132,13 +134,30 @@ jobs:
           if [ -n "$dupes" ]; then echo "asset names collide case-insensitively: $dupes"; exit 1; fi
           (cd dist && shasum -a 256 * > SHA256SUMS)
           cat dist/SHA256SUMS
+      # A release that says the same thing as the one before it says nothing.
+      # The subjects of the commits since the last tag are the changes, and
+      # the static half is how to install and what to expect on first run.
+      - name: write the notes
+        run: |
+          prev=$(git describe --tags --abbrev=0 "$VERSION^" 2>/dev/null || true)
+          {
+            if [ -n "$prev" ]; then
+              echo "## What changed since $prev"
+              echo
+              # the cask commit is bookkeeping this workflow did itself
+              git log --no-merges --pretty='- %s' "$prev..$VERSION" | grep -v '^- Casks: ' || true
+              echo
+            fi
+            cat .github/release-notes.md
+          } > notes.md
+          cat notes.md
       - name: publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$VERSION" dist/* \
             --title "grove $VERSION" \
-            --notes-file .github/release-notes.md
+            --notes-file notes.md
       # The cask carries the checksum of the file it installs, so it can only be
       # written once that file exists. Committing it back is what makes
       # `brew upgrade` work without a second repository to keep in step.
