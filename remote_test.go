@@ -33,7 +33,11 @@ func TestParentIsBlockedByAnUnknownSubmoduleCommit(t *testing.T) {
 	gitRun(t, parent, "commit", "-q", "-m", "add the submodule")
 	gitRun(t, parent, "push", "-q", "-u", "origin", "main")
 
+	// `submodule add` clones the submodule afresh under the parent, and that
+	// clone has none of the identity initRepo set on the original — a machine
+	// without a global one (every CI runner) cannot commit in it
 	subIn := filepath.Join(parent, "vendor", "sub")
+	identify(t, subIn)
 	c := Checkout{Name: "parent", Path: normPath(parent), Repo: "parent"}
 
 	// Nothing unusual yet. The parent has nothing to push, which is its own
@@ -102,6 +106,15 @@ func TestPushableRefusals(t *testing.T) {
 	}
 }
 
+// identify gives a repository an author, which a clone does not inherit and a
+// machine with no global git config cannot supply.
+func identify(t testing.TB, path string) {
+	t.Helper()
+	gitRun(t, path, "config", "user.email", "grove@example.com")
+	gitRun(t, path, "config", "user.name", "grove")
+	gitRun(t, path, "config", "commit.gpgsign", "false")
+}
+
 func byName(repos []RemoteRepo, name string) RemoteRepo {
 	for _, r := range repos {
 		if r.Name == name {
@@ -141,8 +154,7 @@ func TestPushAndRebaseAgainstARealRemote(t *testing.T) {
 	// somebody else pushes, so we are behind and must not push over them
 	other := filepath.Join(dir, "other")
 	gitRun(t, dir, "clone", "-q", remote, other)
-	gitRun(t, other, "config", "user.email", "o@example.com")
-	gitRun(t, other, "config", "user.name", "other")
+	identify(t, other)
 	write(t, other, "theirs.txt", "theirs\n")
 	gitRun(t, other, "add", "theirs.txt")
 	gitRun(t, other, "commit", "-q", "-m", "theirs")
