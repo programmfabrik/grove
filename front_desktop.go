@@ -43,12 +43,17 @@ func run(d *grove, addr string, explicit, _ bool) error {
 	go srv.Serve(ln)
 	url := dashboardURL(ln)
 
+	// "Grove" with a capital: the command you type is `grove`, and the
+	// application the window belongs to is a proper noun like every other one
+	// in the menu bar. The name reaches the About and Quit items through
+	// Options.Name, and the menu bar itself through the executable's name,
+	// which is why the Makefile builds bin/Grove and not bin/grove-app.
 	app := application.New(application.Options{
-		Name:        "grove",
+		Name:        "Grove",
 		Description: "Every checkout, every worktree, and what each of them changed.",
 	})
 	win := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:     "grove",
+		Title:     "Grove",
 		Width:     1400,
 		Height:    900,
 		MinWidth:  700,

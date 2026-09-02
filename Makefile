@@ -20,11 +20,11 @@ ui: ## rebuild ui/dist if the UI sources changed (no-op when current)
 build: ui ## build bin/grove, the command
 	go build -o bin/grove .
 
-app: ui ## build bin/grove-app, the same dashboard in a window of its own
-	go build -tags desktop -o bin/grove-app .
+app: ui ## build bin/Grove, the same dashboard in a window of its own
+	go build -tags desktop -o bin/Grove .
 
 app-windows: ui ## cross-build the Windows app from here (Wails v3 needs no cgo there)
-	GOOS=windows GOARCH=amd64 go build -tags desktop -ldflags "-H=windowsgui" -o bin/grove-app.exe .
+	GOOS=windows GOARCH=amd64 go build -tags desktop -ldflags "-H=windowsgui" -o bin/Grove.exe .
 
 run: build ## build and start it (ADDR=127.0.0.1:8000 to pick the address)
 	./bin/grove $(if $(ADDR),-addr $(ADDR))

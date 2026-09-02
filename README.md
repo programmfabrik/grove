@@ -56,13 +56,16 @@ for. `-addr :80` restores it for whoever wants it.
 | `-refresh` | `20s` | how often the worktrees are re-scanned |
 | `-open` | off | open the browser once it listens |
 
-## The app
+## Grove, the app
 
-The same dashboard, in a window of its own rather than a browser tab:
+The same dashboard, in a window of its own rather than a browser tab. The
+command you type is `grove`; the application is **Grove**, a proper noun like
+every other name in a menu bar — which is also why the binary is capitalised,
+since an unbundled program is named in the menu bar by its executable.
 
 ```sh
-make app          # bin/grove-app
-make app-windows  # bin/grove-app.exe, cross-built from anywhere
+make app          # bin/Grove
+make app-windows  # bin/Grove.exe, cross-built from anywhere
 ```
 
 macOS and Windows. Linux gets the command above and a browser for now — its
@@ -400,7 +403,7 @@ left where it is and clicking never yanks the list.
 ```sh
 make build        # rebuild ui/dist if the UI sources changed, then bin/grove
 make run          # …and start it (ADDR=127.0.0.1:8000 to pick the address)
-make app          # the desktop build instead: bin/grove-app
+make app          # the desktop build instead: bin/Grove
 make test         # go vet and the tests
 ```
 
