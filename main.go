@@ -103,6 +103,7 @@ func main() {
 		d.up = newUpdater()
 		go d.up.watch(context.Background())
 	}
+	go d.autoFetchLoop(context.Background())
 
 	// Everything above is the dashboard; run is the front door, and there are
 	// two of them. The default build serves it to a browser and prints where;
@@ -158,6 +159,9 @@ func (d *grove) routes(loopbackOnly bool) http.Handler {
 	mux.HandleFunc("GET /api/blob", d.handleBlob)
 	mux.HandleFunc("GET /api/lines", d.handleLines)
 	mux.HandleFunc("GET /api/version", d.handleVersion)
+	mux.HandleFunc("GET /api/remote", d.handleRemote)
+	mux.HandleFunc("POST /api/remote", d.handleRemoteAction)
+	mux.HandleFunc("POST /api/autofetch", d.handleAutoFetch)
 	mux.HandleFunc("POST /api/refresh", d.handleRefresh)
 	mux.HandleFunc("POST /api/revert", d.handleRevert)
 	mux.Handle("/", uiHandler())

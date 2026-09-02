@@ -457,6 +457,49 @@ pane's own default rather than leaving the page empty. Every list scrolls its
 restored row into view, with `block: 'nearest'` so a row already on screen is
 left where it is and clicking never yanks the list.
 
+## Pushing
+
+The checkout's head carries **Push**, and the two honest answers for when it
+cannot.
+
+Push always fetches first — and fetches *every* repository under the checkout,
+not only the one being pushed, because whether the parent may push depends on
+what the submodules' remotes hold and that cannot be answered with stale refs.
+Then it decides again, against what it just learned rather than against
+whatever the page was showing when you clicked. It refuses four cases:
+
+| | |
+| --- | --- |
+| detached HEAD | there is no branch to push |
+| the remote has moved | pushing would fail anyway — **Fetch & rebase** and **Fetch & merge** appear in its place |
+| nothing to push | being ahead by nothing is a no-op, not an error |
+| an unknown submodule commit | see below |
+
+Never `--force`, never a lease, never a branch it invented: it pushes the
+branch that is checked out to the upstream it already has, and `--set-upstream`
+only when there is none. A rebase or merge that would conflict stops and is
+left to a terminal, which is where a conflict belongs.
+
+**The unknown submodule commit** is the one worth having. A checkout carrying
+submodules is several repositories, and the parent records a specific commit
+for each. If that commit is on no remote branch of the submodule, pushing the
+parent publishes a pointer nobody else can follow: they fetch the parent, git
+asks the submodule's remote for that id, and nobody has it. So the parent is
+refused until the submodule is pushed — and the submodule itself is never
+refused for this, because pushing it is the cure. Selecting both pushes the
+submodule first for the same reason.
+
+The select beside the buttons is which repositories to act on. A submodule is
+normally detached — that is what a submodule is, a commit rather than a branch
+— so it starts unselected and says nothing about it.
+
+**Fetching on a timer** is behind the caret next to Fetch, off until you turn
+it on and remembered per repository: one project whose remote you want current
+is not a reason to reach out to seventy-three others. It covers the whole
+repository — a repository's worktrees share one object store, so one fetch
+serves them all — and each checkout's submodules, which are repositories of
+their own and do not come along.
+
 ## What the loopback port is, and is not
 
 grove binds the loopback interface, so nothing outside the machine can reach
@@ -557,6 +600,7 @@ cd ui && npm run dev
 | `lines.go` | `/api/lines` — the unchanged lines the hunk expanders pull in, and whole files for the colouring and the rendering |
 | `preview.go` | `/api/blob` — bytes of a renderable file, at either revision |
 | `revert.go` | `/api/revert` — unstage and discard |
+| `remote.go` | `/api/remote` — where each repository stands with its remote, and push, fetch, rebase, merge |
 | `paths.go` | the one spelling a path is kept in — see below |
 | `front_cli.go` | the default front door: serve it and say where it is |
 | `front_desktop.go` | `-tags desktop` — the window, its menu and the folder dialog |

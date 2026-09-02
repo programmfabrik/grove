@@ -94,3 +94,23 @@ export type Update = {
   notes_url?: string
   homebrew?: boolean
 }
+
+// One repository's standing with its remote — the checkout, or a submodule
+// under it. See remote.go.
+export type RemoteRepo = {
+  name: string
+  branch?: string
+  detached?: boolean
+  upstream?: string
+  remote?: string
+  ahead: number
+  behind: number
+  dirty: number
+  gitlink?: string
+  gitlink_unknown?: boolean
+  can_push: boolean
+  blocked?: string
+  fetched_at?: string
+}
+export type RemoteState = { name: string; repo?: string; auto_fetch?: boolean; repos: RemoteRepo[] }
+export type RemoteResult = { repo: string; ok: boolean; detail?: string }

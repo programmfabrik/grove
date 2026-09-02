@@ -5,6 +5,7 @@ import { DiffTab } from './DiffTab'
 import { Copy } from './ui'
 import { fmtDateTime } from '../lib/format'
 import { ContextMenu, RevertDialog, type MenuState, type PendingRevert } from './RevertMenu'
+import { RemoteBar } from './RemoteBar'
 
 // The sidebar is the one detail surface. Its head is everything known about
 // the checkout — name, branch, distance from the base, path, head commit —
@@ -49,6 +50,7 @@ export function Sidebar({
             <span className={c.dirty ? 'on dirty' : ''}>{c.dirty} uncommitted</span>
           </div>
         </div>
+        <RemoteBar name={c.name} onChanged={() => setReverted((n) => n + 1)} />
         <div className="sb-facts dim">
           <Copy text={c.path} title="Copy path">
             <span className="mono">{c.path}</span>

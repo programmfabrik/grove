@@ -1,4 +1,4 @@
-import type { DiffFile, Repo, ScopeRepo, State, Update } from './types'
+import type { DiffFile, RemoteResult, RemoteState, Repo, ScopeRepo, State, Update } from './types'
 
 async function j<T>(r: Response): Promise<T> {
   if (!r.ok) {
@@ -78,4 +78,29 @@ export const api = {
     ).then((r) => j<{ lines: string[]; from: number; total: number }>(r)),
   // what is running, and whether anything newer was published
   version: (): Promise<Update> => fetch('api/version').then((r) => j<Update>(r)),
+  // where every repository under a checkout stands with its remote. A read:
+  // it never fetches, so it is as fresh as the last fetch and says when.
+  remote: (name: string): Promise<RemoteState> =>
+    fetch(`api/remote?name=${encodeURIComponent(name)}`).then((r) => j<RemoteState>(r)),
+  // fetch, push, rebase or merge. Always fetches first, always every
+  // repository under the checkout, because whether the parent may push
+  // depends on what the submodules' remotes hold.
+  // fetch on a timer, remembered per repository (all its worktrees share one
+  // object store, so one fetch serves them all)
+  autoFetch: (repo: string, on: boolean): Promise<{ repo: string; on: boolean }> =>
+    fetch('api/autofetch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo, on }),
+    }).then((r) => j<{ repo: string; on: boolean }>(r)),
+  remoteAct: (body: {
+    name: string
+    repos: string[]
+    action: 'fetch' | 'push' | 'rebase' | 'merge'
+  }): Promise<{ results: RemoteResult[]; repos: RemoteState['repos'] }> =>
+    fetch('api/remote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then((r) => j<{ results: RemoteResult[]; repos: RemoteState['repos'] }>(r)),
 }
