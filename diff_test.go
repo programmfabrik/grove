@@ -1,7 +1,7 @@
 package main
 
 import (
-	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -20,7 +20,14 @@ func TestSafeRepoPath(t *testing.T) {
 		"a/../../outside.go", // …the long way round
 		"--output=/tmp/x",    // an option, not a path
 		"-x",                 //
-		filepath.FromSlash("/etc/passwd"),
+	}
+	// The shapes that escape a checkout are not the same on both platforms,
+	// and the Windows ones are the reason this guard is IsLocal: `\etc\passwd`
+	// is rooted but names no drive, so IsAbs called it relative and let it by.
+	if runtime.GOOS == "windows" {
+		bad = append(bad, `\etc\passwd`, `C:\Windows\System32`, `C:relative`, "NUL", "COM1")
+	} else {
+		bad = append(bad, "/etc/passwd")
 	}
 	for _, p := range bad {
 		if safeRepoPath(p) {

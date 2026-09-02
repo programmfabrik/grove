@@ -525,16 +525,16 @@ func fileDiff(root, path string, untracked bool, spec scopeSpec, ignore bool) (s
 	return string(out), false, nil
 }
 
-// safeRepoPath keeps the file parameter inside the checkout: relative, no
-// parent-directory hops, and not an option git could interpret.
+// safeRepoPath keeps the file parameter inside the checkout: a relative path,
+// no parent-directory hops, and not an option git could interpret.
+//
+// filepath.IsLocal is the whole guard on the first two, and it has to be.
+// Checking IsAbs and walking the segments by hand is right on Unix and wrong
+// on Windows, where `\etc\passwd` is ROOTED but not absolute — it names no
+// drive, so IsAbs says false and the path went through. IsLocal knows the
+// difference, and it also refuses the reserved device names: os.ReadFile("NUL")
+// on Windows opens the null device, and /api/lines reads what it is handed.
 func safeRepoPath(p string) bool {
-	if p == "" || filepath.IsAbs(p) || strings.HasPrefix(p, "-") {
-		return false
-	}
-	for _, seg := range strings.Split(filepath.ToSlash(filepath.Clean(p)), "/") {
-		if seg == ".." {
-			return false
-		}
-	}
-	return true
+	// a leading dash is an option to git whatever the filesystem makes of it
+	return p != "" && !strings.HasPrefix(p, "-") && filepath.IsLocal(p)
 }
