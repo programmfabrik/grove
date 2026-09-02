@@ -194,7 +194,14 @@ func (d *grove) reposList(ctx context.Context) []Repo {
 }
 
 func (d *grove) handleRepos(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"dir": d.dir(), "repos": d.reposList(r.Context())})
+	repos := d.reposList(r.Context())
+	if repos == nil {
+		// null and [] read the same in Go and not in the page: null is "not
+		// loaded yet" there, and a directory holding nothing would say
+		// "loading…" for as long as anybody left it open
+		repos = []Repo{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"dir": d.dir(), "repos": repos})
 }
 
 // repoStateFor scans a repository's worktrees when its cache has expired.

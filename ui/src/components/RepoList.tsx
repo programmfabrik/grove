@@ -11,11 +11,13 @@ export function RepoList({
   repos,
   sel,
   terms,
+  filtering,
   onPick,
 }: {
   repos: Repo[] | null
   sel: string
   terms: string[]
+  filtering: boolean
   onPick: (path: string) => void
 }) {
   const box = useScrollToActive('.rp-active', sel)
@@ -42,7 +44,21 @@ export function RepoList({
           </div>
         </div>
       ))}
-      {!repos.length && <div className="empty small">no repository matches</div>}
+      {!repos.length &&
+        (filtering ? (
+          <div className="empty small">no repository matches</div>
+        ) : (
+          // Not the same thing at all, and the difference is what somebody
+          // opening grove for the first time needs to read: there is nothing
+          // here, and here is how you point it somewhere there is something.
+          <div className="empty small">
+            <p>No git repositories in this directory.</p>
+            <p className="dim">
+              Choose one that holds your checkouts — <b>File → Open Folder…</b>, or start
+              <code> grove</code> in it.
+            </p>
+          </div>
+        ))}
     </div>
   )
 }

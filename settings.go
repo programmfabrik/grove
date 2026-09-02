@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // What the app has to remember and the command never does. A command is
@@ -59,4 +60,51 @@ func (s settings) save() error {
 		return err
 	}
 	return os.WriteFile(path, append(buf, '\n'), 0o644)
+}
+
+// likelyStartDir is where to point the folder chooser when there is nothing
+// remembered and nothing to show. An application launched from an icon has a
+// working directory of "/", and a first window that opens on the filesystem
+// root, finds nothing, and says nothing is the worst first impression grove
+// could make.
+//
+// It suggests rather than decides: the directories below are where people
+// actually keep checkouts, and the first one that HOLDS a repository is
+// offered — offered, in a dialog somebody confirms, because guessing wrong and
+// silently opening somewhere unexpected is its own kind of rude.
+func likelyStartDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	for _, name := range []string{
+		"src", "Projects", "projects", "code", "Code", "dev", "Developer",
+		"git", "repos", "workspace", "work",
+		filepath.Join("go", "src", "github.com"),
+	} {
+		if p := filepath.Join(home, name); hasRepos(p) {
+			return p
+		}
+	}
+	// nothing recognisable: the home directory is a better place to start
+	// looking from than the root of the disk
+	return home
+}
+
+// hasRepos says whether a directory holds a git checkout at its top level —
+// the same thing the repo list looks for, stopping at the first one found.
+func hasRepos(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(dir, e.Name(), ".git")); err == nil {
+			return true
+		}
+	}
+	return false
 }

@@ -129,6 +129,19 @@ wins when it actually holds repositories, which is what a launch from a
 terminal means, and an explicit `-dir` beats both without being recorded — it
 was a one-off instruction rather than a change of mind.
 
+**The first run has nothing to remember**, and the answer is to ask rather than
+to guess. Grove opens the folder chooser, pointed at wherever checkouts
+actually seem to be: `~/src`, `~/Projects`, `~/code`, `~/go/src/github.com` and
+a few more, in order, the first one that *holds* a repository rather than the
+first name that exists — and the home directory if none of them do, since that
+is a better place to start looking than the root of the disk. It suggests; it
+does not decide. Opening somewhere unexpected without being asked is its own
+kind of rude, and a window that opens on `/`, finds nothing and says nothing is
+the worst first impression grove could make.
+
+Cancel the dialog and the window says what it found and what to do about it,
+rather than showing an empty column that claims to be loading.
+
 Both binaries hold the same server and the same dashboard; only the front door
 differs (`front_cli.go`, `front_desktop.go`). The default build has no window
 code in it at all — no cgo, no webview, not one Wails package — so `go install`

@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"path/filepath"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 // The desktop front door: the same dashboard, in a window of its own, built
@@ -66,6 +68,15 @@ func run(d *grove, addr string, explicit, _ bool) error {
 		URL:       url,
 	})
 	app.Menu.SetApplicationMenu(desktopMenu(app, d, win, url))
+
+	// Nothing to show means a first run, or a remembered directory that has
+	// since gone. Either way an empty window explains nothing, so ask — once
+	// the application is up, since a dialog needs one.
+	if len(d.reposList(context.Background())) == 0 {
+		app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
+			chooseFolder(app, d, win, url)
+		})
+	}
 	return app.Run()
 }
 
@@ -136,11 +147,20 @@ func rememberOrRecallDir(d *grove) {
 // without it the directory can only come from the shell that started grove,
 // and an app is not started from a shell.
 func chooseFolder(app *application.App, d *grove, win application.Window, url string) {
+	// Where the dialog opens matters more than it looks. On a first run the
+	// working directory is "/" — an icon has no shell to have been started in
+	// — and dropping somebody at the root of the disk to go looking is no help
+	// at all.
+	start := d.dir()
+	if start == "" || start == string(filepath.Separator) || !hasRepos(start) {
+		start = likelyStartDir()
+	}
 	dir, err := app.Dialog.OpenFile().
 		CanChooseDirectories(true).
 		CanChooseFiles(false).
 		SetTitle("Choose a directory of repositories").
-		SetDirectory(d.dir()).
+		SetMessage("Grove shows every checkout and worktree in one directory.").
+		SetDirectory(start).
 		PromptForSingleSelection()
 	if err != nil || dir == "" {
 		return // cancelled

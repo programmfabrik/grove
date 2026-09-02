@@ -216,7 +216,7 @@ export default function App() {
               />
               {reposFilter && <PaneFilter value={reposQ} onChange={setReposQ} placeholder="filter repos…" />}
               <div className="pane-body">
-                <RepoList repos={shownRepos} sel={repo} terms={repoTerms} onPick={setRepo} />
+                <RepoList repos={shownRepos} sel={repo} terms={repoTerms} filtering={repoTerms.length > 0} onPick={setRepo} />
               </div>
             </div>
 
@@ -248,6 +248,11 @@ export default function App() {
                   setDiffRepo(undefined)
                 }}
               />
+            ) : repos && !repos.length ? (
+              // there are no repositories at all, and the repos column already
+              // says so. A second column insisting it is loading something is
+              // just a window that looks broken.
+              null
             ) : (
               <div className="empty small">loading…</div>
             )}
