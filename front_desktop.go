@@ -53,7 +53,7 @@ func run(d *grove, addr string, explicit, _ bool) error {
 	// which is why the Makefile builds bin/Grove and not bin/grove-app.
 	app := application.New(application.Options{
 		Name:        "Grove",
-		Description: "Every checkout, every worktree, and what each of them changed.",
+		Description: "Every checkout, every worktree, and what each of them changed.\n\nVersion " + version,
 	})
 	win := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "Grove",

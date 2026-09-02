@@ -1,4 +1,5 @@
 /bin/
+/dist/
 /grove
 /grove.exe
 ui/node_modules/

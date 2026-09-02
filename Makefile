@@ -20,8 +20,13 @@ ui: ## rebuild ui/dist if the UI sources changed (no-op when current)
 build: ui ## build bin/grove, the command
 	go build -o bin/grove .
 
+# The desktop build goes in bin/app/ and the command stays in bin/, because
+# `Grove` and `grove` are the SAME FILE on a case-insensitive filesystem —
+# which macOS is by default, and so are the macOS CI runners. Built side by
+# side in one directory they silently overwrite each other, and the loser is
+# whichever ran first.
 app: ui ## the same dashboard in a window of its own (bin/Grove.app on macOS)
-	go build -tags desktop -o bin/Grove .
+	go build -tags desktop -o bin/app/Grove .
 	@[ "$$(uname)" = "Darwin" ] && $(MAKE) --no-print-directory bundle || true
 
 # A bare executable is not an application on macOS. Launched from a shell it
@@ -36,10 +41,10 @@ bundle: ## wrap bin/Grove into bin/Grove.app (macOS)
 	mkdir -p bin/Grove.app/Contents/MacOS bin/Grove.app/Contents/Resources
 	cp packaging/macos/Info.plist bin/Grove.app/Contents/Info.plist
 	cp packaging/macos/Grove.icns bin/Grove.app/Contents/Resources/Grove.icns
-	cp bin/Grove bin/Grove.app/Contents/MacOS/Grove
+	cp bin/app/Grove bin/Grove.app/Contents/MacOS/Grove
 
 app-windows: ui ## cross-build the Windows app from here (Wails v3 needs no cgo there)
-	GOOS=windows GOARCH=amd64 go build -tags desktop -ldflags "-H=windowsgui" -o bin/Grove.exe .
+	GOOS=windows GOARCH=amd64 go build -tags desktop -ldflags "-H=windowsgui" -o bin/app/Grove.exe .
 
 run: build ## build and start it (ADDR=127.0.0.1:8000 to pick the address)
 	./bin/grove $(if $(ADDR),-addr $(ADDR))

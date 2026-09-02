@@ -1,0 +1,146 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch: # build the assets without publishing, to prove the workflow
+
+permissions:
+  contents: write
+
+env:
+  # a manual run has no tag; it still builds everything, it just does not publish
+  VERSION: ${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
+
+jobs:
+  # macOS is the only build that needs cgo and therefore its own runner. Both
+  # architectures, lipo'd into one binary: a universal app is one download that
+  # works on either Mac, and picking wrong is a support question nobody wants.
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # bin/app for the window, bin/cli for the command. `Grove` and `grove` are
+      # the SAME FILE on the case-insensitive filesystem these runners use, so
+      # built in one directory the second silently loses to the first — and the
+      # tarball ships whatever won.
+      - name: build the app, both architectures
+        run: |
+          for arch in arm64 amd64; do
+            CGO_ENABLED=1 GOOS=darwin GOARCH=$arch \
+              go build -tags desktop -ldflags "-X main.version=$VERSION" -o "bin/app/Grove-$arch" .
+          done
+          lipo -create -output bin/app/Grove bin/app/Grove-arm64 bin/app/Grove-amd64
+          lipo -info bin/app/Grove
+      - name: bundle, stamp the version, sign
+        run: |
+          make bundle
+          plutil -replace CFBundleShortVersionString -string "${VERSION#v}" bin/Grove.app/Contents/Info.plist
+          plutil -replace CFBundleVersion -string "${VERSION#v}" bin/Grove.app/Contents/Info.plist
+          # An ad-hoc signature is not a Developer ID and does not quiet
+          # Gatekeeper. It does stop macOS calling the app "damaged" on Apple
+          # Silicon, where an unsigned bundle will not launch at all, and it
+          # costs nothing.
+          codesign --force --deep --sign - bin/Grove.app
+          codesign --verify --verbose bin/Grove.app
+      - name: build the command, both architectures
+        run: |
+          for arch in arm64 amd64; do
+            CGO_ENABLED=0 GOOS=darwin GOARCH=$arch \
+              go build -ldflags "-X main.version=$VERSION" -o "bin/cli/grove-$arch" .
+          done
+          lipo -create -output bin/cli/grove bin/cli/grove-arm64 bin/cli/grove-amd64
+          rm bin/cli/grove-arm64 bin/cli/grove-amd64
+      - name: package
+        run: |
+          mkdir -p dist
+          # ditto, not zip: a .app is a directory with symlinks and resource
+          # forks, and zip(1) flattens things that matter
+          ditto -c -k --sequesterRsrc --keepParent bin/Grove.app dist/Grove-macos-universal.zip
+          tar -C bin/cli -czf dist/grove-macos-universal.tar.gz grove
+      # Nothing here should be able to ship a binary for the wrong platform,
+      # and the case-insensitive collision above is exactly how that happens.
+      - name: check what is actually in them
+        run: |
+          file bin/Grove.app/Contents/MacOS/Grove | grep -q "universal binary with 2 architectures"
+          file bin/cli/grove | grep -q "universal binary with 2 architectures"
+          echo "both universal"
+      - uses: actions/upload-artifact@v4
+        with: { name: macos, path: dist/ }
+
+  # Everything else is pure Go and cross-compiles from one runner. Wails v3
+  # loads WebView2 at runtime, so even the Windows app needs no cgo.
+  cross:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: build
+        run: |
+          mkdir -p dist bin
+          # the Windows app: -H=windowsgui so it does not open a console behind
+          # the window it just opened
+          GOOS=windows GOARCH=amd64 go build -tags desktop \
+            -ldflags "-H=windowsgui -X main.version=$VERSION" -o bin/app/Grove.exe .
+          (cd bin/app && zip -q ../../dist/Grove-windows-amd64.zip Grove.exe)
+          # and the command, everywhere it is useful — Linux included, which is
+          # where it is the whole product for now
+          # each target gets its own directory. Reusing one path means the
+          # next build has to overwrite the last, and `go build -o` refuses
+          # any file it did not write itself — a lipo'd binary among them — so
+          # the build fails while the packaging step happily ships the stale
+          # one it found.
+          for target in windows/amd64 linux/amd64 linux/arm64; do
+            os=${target%/*}; arch=${target#*/}
+            ext=""; [ "$os" = windows ] && ext=.exe
+            out="bin/cli/$os-$arch"; mkdir -p "$out"
+            GOOS=$os GOARCH=$arch go build -ldflags "-X main.version=$VERSION" -o "$out/grove$ext" .
+            if [ "$os" = windows ]; then (cd "$out" && zip -q "$GITHUB_WORKSPACE/dist/grove-$os-$arch.zip" "grove$ext");
+            else tar -C "$out" -czf "dist/grove-$os-$arch.tar.gz" grove; fi
+          done
+          ls -la dist/
+      - name: check what is actually in them
+        run: |
+          file bin/app/Grove.exe | grep -q "PE32+ executable (GUI)"
+          tar -xzOf dist/grove-linux-arm64.tar.gz grove > /tmp/l && file /tmp/l | grep -q "ELF 64-bit.*ARM aarch64"
+          tar -xzOf dist/grove-linux-amd64.tar.gz grove > /tmp/l && file /tmp/l | grep -q "ELF 64-bit.*x86-64"
+          unzip -p dist/grove-windows-amd64.zip grove.exe > /tmp/w && file /tmp/w | grep -q "PE32+ executable (console)"
+          echo "every artifact is for the platform it claims"
+      - uses: actions/upload-artifact@v4
+        with: { name: cross, path: dist/ }
+
+  publish:
+    needs: [macos, cross]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: art }
+      - run: mkdir -p dist && mv art/*/* dist/ && (cd dist && shasum -a 256 * > SHA256SUMS) && cat dist/SHA256SUMS
+      - name: publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$VERSION" dist/* \
+            --title "grove $VERSION" \
+            --notes-file .github/release-notes.md
+      # The cask carries the checksum of the file it installs, so it can only be
+      # written once that file exists. Committing it back is what makes
+      # `brew upgrade` work without a second repository to keep in step.
+      - name: update the Homebrew cask
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(shasum -a 256 dist/Grove-macos-universal.zip | cut -d' ' -f1)
+          sed -e "s/__VERSION__/${VERSION#v}/" -e "s/__SHA256__/$sha/" \
+            packaging/homebrew/grove.rb.in > Casks/grove.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/grove.rb
+          git commit -m "Casks: grove $VERSION" || exit 0
+          git push origin HEAD:main

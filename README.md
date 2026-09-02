@@ -20,6 +20,20 @@ anything. The single exception is the diff tree's context menu — see
 
 ## Install
 
+The app, on macOS:
+
+```sh
+brew tap programmfabrik/grove https://github.com/programmfabrik/grove
+brew install --cask grove
+```
+
+…or a download for macOS or Windows from
+[the releases](https://github.com/programmfabrik/grove/releases), which the
+[download page](https://programmfabrik.github.io/grove/) will pick for you —
+including what to do about the warning an unsigned build earns on first run.
+
+The command, anywhere Go runs:
+
 ```sh
 go install github.com/programmfabrik/grove@latest
 cd ~/src && grove          # http://localhost
@@ -64,10 +78,15 @@ every other name in a menu bar — which is also why the binary is capitalised,
 since an unbundled program is named in the menu bar by its executable.
 
 ```sh
-make app          # bin/Grove.app on macOS, bin/Grove elsewhere
-make app-windows  # bin/Grove.exe, cross-built from anywhere
+make app          # bin/Grove.app on macOS, bin/app/Grove elsewhere
+make app-windows  # bin/app/Grove.exe, cross-built from anywhere
 open bin/Grove.app
 ```
+
+The desktop build lands in `bin/app/` and the command stays in `bin/`, because
+`Grove` and `grove` are the same file on a case-insensitive filesystem — which
+macOS is by default, and so are its CI runners. Built beside each other they
+overwrite each other in silence, and what ships is whichever ran first.
 
 On macOS the executable is wrapped in a bundle, because a bare executable is
 not an application there: launched from a shell it dies with that shell, it

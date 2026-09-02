@@ -31,6 +31,11 @@ import (
 	"time"
 )
 
+// version is stamped in by the release build (-ldflags "-X main.version=…").
+// A build from a working tree says so rather than claiming a number nobody
+// tagged.
+var version = "dev"
+
 type options struct {
 	dir     string
 	base    string
@@ -66,7 +71,12 @@ func main() {
 	flag.StringVar(&opt.dir, "dir", "", "directory holding the repositories (default: the working directory, or its repo's parent)")
 	flag.StringVar(&opt.base, "base", "", "branch the checkouts are compared against (default: the branch of the main checkout)")
 	flag.DurationVar(&opt.refresh, "refresh", 20*time.Second, "how often the worktrees are re-scanned with git")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Printf("grove %s\n", version)
+		return
+	}
 
 	// Everything grove shows comes out of git, startDir included, so resolve it
 	// before the first call rather than serving a dashboard of empty panes.
