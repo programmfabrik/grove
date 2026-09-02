@@ -4,10 +4,12 @@ import type { DiffFile } from '../types'
 
 // The rendered reading of a markdown file: before and after side by side, the
 // same two panes the image preview uses, one pane where the change added or
-// removed the file. Each pane reads the whole file as its side of the scope
-// sees it and renders it (lib/md); a relative image resolves through the blob
-// endpoint at that same side, so a screenshot the change added shows on the
-// right and not on the left.
+// removed the file. Both sides are read whole as their side of the scope sees
+// them, rendered (lib/md), and — where both exist — compared: a block only
+// one side has is tinted, a reworded one shows its changed words, in the line
+// diff's own green and red. A relative image resolves through the blob
+// endpoint at the pane's own side, so a screenshot the change added shows on
+// the right and not on the left.
 
 export const isMarkdown = (path: string) => /\.(md|markdown)$/i.test(path)
 
@@ -15,56 +17,7 @@ const blobURL = (name: string, repo: string, scope: string, path: string, side: 
   `api/blob?name=${encodeURIComponent(name)}&repo=${encodeURIComponent(repo)}&scope=${encodeURIComponent(scope)}` +
   `&file=${encodeURIComponent(path)}&side=${side}`
 
-function Pane({
-  label,
-  side,
-  name,
-  repo,
-  scope,
-  file,
-  poll,
-}: {
-  label: string
-  side: 'before' | 'after'
-  name: string
-  repo: string
-  scope: string
-  file: DiffFile
-  poll: number
-}) {
-  const [html, setHtml] = useState<string | null>(null)
-  const [failed, setFailed] = useState(false)
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const [md, r] = await Promise.all([import('../lib/md'), api.fileText(name, repo, scope, file.path, side)])
-        if (cancelled) return
-        const out = md.renderMarkdown(r.lines.join('\n'), (rel) => {
-          const path = md.resolvePath(file.path, rel)
-          return path ? blobURL(name, repo, scope, path, side) : undefined
-        })
-        setHtml((prev) => (prev === out ? prev : out)) // identical text: no re-render
-      } catch {
-        if (!cancelled) setFailed(true)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [name, repo, scope, file.path, side, poll])
-  if (failed) return null
-  return (
-    <figure className="pv-pane">
-      <figcaption className="pv-label">{label}</figcaption>
-      {html === null ? (
-        <div className="empty small">rendering…</div>
-      ) : (
-        <div className="md" dangerouslySetInnerHTML={{ __html: html }} />
-      )}
-    </figure>
-  )
-}
+type Sides = { before?: string; after?: string }
 
 export function Markdown({
   name,
@@ -81,13 +34,59 @@ export function Markdown({
 }) {
   const added = file.status === 'new' || file.status === 'added' || file.untracked
   const removed = file.status === 'deleted'
-  const pane = (label: string, side: 'before' | 'after') => (
-    <Pane label={label} side={side} name={name} repo={repo} scope={scope} file={file} poll={poll} />
+  const [html, setHtml] = useState<Sides | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const md = await import('../lib/md')
+        const side = async (s: 'before' | 'after') => {
+          try {
+            const r = await api.fileText(name, repo, scope, file.path, s)
+            return md.renderMarkdown(r.lines.join('\n'), (rel) => {
+              const path = md.resolvePath(file.path, rel)
+              return path ? blobURL(name, repo, scope, path, s) : undefined
+            })
+          } catch {
+            return undefined // no file on that side
+          }
+        }
+        const [before, after] = await Promise.all([added ? undefined : side('before'), removed ? undefined : side('after')])
+        if (cancelled) return
+        if (before === undefined && after === undefined) {
+          setFailed(true)
+          return
+        }
+        const out: Sides = before !== undefined && after !== undefined ? md.diffRendered(before, after) : { before, after }
+        // identical pages: no re-render under the reader
+        setHtml((prev) => (prev && prev.before === out.before && prev.after === out.after ? prev : out))
+      } catch {
+        if (!cancelled) setFailed(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [name, repo, scope, file.path, added, removed, poll])
+
+  if (failed) return <div className="empty small">cannot render this file</div>
+  const single = added || removed
+  const pane = (label: string, body?: string) => (
+    <figure className="pv-pane">
+      <figcaption className="pv-label">{label}</figcaption>
+      {html === null ? (
+        <div className="empty small">rendering…</div>
+      ) : (
+        <div className="md" dangerouslySetInnerHTML={{ __html: body ?? '' }} />
+      )}
+    </figure>
   )
   return (
-    <div className={`pv${added || removed ? ' pv-single' : ''}`}>
-      {!added && pane(removed ? 'deleted' : 'before', 'before')}
-      {!removed && pane(added ? 'added' : 'after', 'after')}
+    <div className={`pv${single ? ' pv-single' : ''}`}>
+      {!added && pane(removed ? 'deleted' : 'before', html?.before)}
+      {!removed && pane(added ? 'added' : 'after', html?.after)}
     </div>
   )
 }

@@ -252,6 +252,14 @@ own side, so a screenshot the change added shows on the right and not on the
 left. The last choice is the default for the next file; a file switched on its
 own keeps its choice for the session.
 
+The two rendered pages are compared as well. Their blocks — paragraphs,
+headings, list items, table rows, code — are matched by text; a block only one
+side has is tinted whole, and a removed block facing an added one is matched
+again word by word, so a reworded sentence shows the words that moved and not
+the paragraph, in the line diff's own green and red. YAML front matter is
+shown as metadata, small and dim, rather than as the heading markdown would
+make of it.
+
 ![a README rendered before and after, side by side](docs/markdown.png)
 
 The same marker heads the diff itself. One git command covers every range

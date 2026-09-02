@@ -558,6 +558,19 @@ a { color: var(--accent-ink); }
 .md img { max-width: 100%; height: auto; border-radius: 6px; }
 .md a { color: var(--accent-ink); }
 .md hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+.md-front { font-size: 11px; color: var(--dim); background: none; padding: 0 0 8px; border-bottom: 1px solid var(--border); border-radius: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* what changed between the two rendered pages: a block only one side has
+   is tinted whole, a reworded block carries a grey rule and marks its words,
+   in the line diff's own colours */
+.md .md-b-add, .md .md-b-del, .md .md-b-chg { box-shadow: -8px 0 0 transparent; border-radius: 3px; }
+.md .md-b-add { background: var(--diff-add); box-shadow: inset 3px 0 0 var(--diff-add-ink); padding-left: 8px; }
+.md .md-b-del { background: var(--diff-del); box-shadow: inset 3px 0 0 var(--diff-del-ink); padding-left: 8px; }
+.md .md-b-chg { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--dim) 40%, transparent); padding-left: 8px; }
+.md li.md-b-add, .md li.md-b-del, .md li.md-b-chg { padding-left: 4px; }
+.md tr.md-b-add, .md tr.md-b-del, .md tr.md-b-chg { box-shadow: none; padding: 0; }
+.md pre.md-b-add, .md pre.md-b-del, .md pre.md-b-chg { padding-left: 12px; }
+.md ins.md-w-add { text-decoration: none; background: color-mix(in srgb, var(--diff-add-ink) 30%, transparent); border-radius: 2px; }
+.md del.md-w-del { text-decoration: none; background: color-mix(in srgb, var(--diff-del-ink) 30%, transparent); border-radius: 2px; }
 
 /* ── filter term colours ─────────────────────────────────────────────── */
 /* one colour per term, cycling; the term in the input and its hits in the

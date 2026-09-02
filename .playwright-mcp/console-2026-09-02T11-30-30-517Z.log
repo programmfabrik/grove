@@ -1,0 +1,4 @@
+[   66250ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8002/api/scopes?name=fylr4:0
+[   66250ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8002/api/diff?name=fylr4&repo=fylr&scope=base:0
+[   66251ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8002/api/lines?name=fylr4&repo=fylr&scope=base&file=releases%2F6.35.0.md&from=1&to=0&side=before:0
+[   66251ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:8002/api/lines?name=fylr4&repo=fylr&scope=base&file=releases%2F6.35.0.md&from=1&to=0&side=after:0
