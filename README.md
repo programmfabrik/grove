@@ -617,6 +617,15 @@ only calls made are for commits that are already pushed.
 
 ## Settings
 
+**About Grove**, in the same menu, says what this grove is and what it is
+running on: its version, the platform, and the git it found and at what
+version. Those belong there rather than in Settings — they are facts about the
+machine, not things anybody can set, and a settings screen full of read-only
+facts is how a settings screen stops being read. It is the native panel, not
+the system's standard one, because the standard one can say what is in
+`Info.plist` and nothing else. A browser tab has no menu bar to put an About
+in, so that one keeps them at the bottom of Settings.
+
 **⌘,** in the app, under Grove in the menu bar — where a Mac user looks for it,
 and where no button in a web toolbar will make them look instead. It opens a
 window of its own rather than a panel inside the dashboard. Elsewhere it is

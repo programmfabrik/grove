@@ -59,7 +59,7 @@ func run(d *grove, addr string, explicit, _ bool) error {
 	// which is why the Makefile builds bin/Grove and not bin/grove-app.
 	app := application.New(application.Options{
 		Name:        "Grove",
-		Description: "Every checkout, every worktree, and what each of them changed.\n\nVersion " + version,
+		Description: aboutText(),
 	})
 	win := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "Grove",
@@ -115,7 +115,12 @@ func desktopMenu(app *application.App, d *grove, win application.Window, url str
 	// Wails has no role for it, so the rest of the menu is reproduced around it.
 	if runtime.GOOS == "darwin" {
 		appMenu := menu.AddSubmenu("Grove")
-		appMenu.AddRole(application.About)
+		// not the About role: that opens the system panel, which can say what
+		// is in Info.plist and nothing else — no git, no platform. This is the
+		// same native panel with something worth reading in it.
+		appMenu.Add("About Grove").OnClick(func(*application.Context) {
+			app.Menu.ShowAbout()
+		})
 		appMenu.AddSeparator()
 		appMenu.Add("Settings…").SetAccelerator("cmd+,").OnClick(func(*application.Context) {
 			openSettings(app, url)
@@ -175,6 +180,26 @@ func rememberOrRecallDir(d *grove) {
 		return
 	}
 	settings{Dir: d.dir()}.save()
+}
+
+// aboutText is what About says: what this grove is, and what it is running on.
+// The version of git in particular belongs here rather than in Settings — it
+// is a fact about the machine, not something anybody can change, and a
+// settings screen full of read-only facts is how a settings screen stops being
+// read at all.
+func aboutText() string {
+	lines := []string{
+		"Every checkout, every worktree, and what each of them changed.",
+		"",
+		"Version   " + version,
+		"Platform  " + runtime.GOOS + "/" + runtime.GOARCH,
+	}
+	if v, err := git("", "--version"); err == nil {
+		lines = append(lines, "git       "+strings.TrimPrefix(v, "git version ")+"  "+gitExe)
+	} else {
+		lines = append(lines, "git       "+gitExe)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // openSettings shows what grove is standing on, in a window of its own.

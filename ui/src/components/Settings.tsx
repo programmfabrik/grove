@@ -41,6 +41,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
 }
 
 function SettingsBody() {
+  const [desktop, setDesktop] = useState(false)
   const [d, setD] = useState<Diagnostics | null>(null)
   const [prefs, setPrefs] = useState<Prefs | null>(null)
   const [programs, setPrograms] = useState<Program[]>([])
@@ -53,6 +54,7 @@ function SettingsBody() {
     api.prefs().then(setPrefs).catch(() => {})
     api.programs().then((r) => setPrograms(r.programs)).catch(() => {})
     api.loginItem().then(setLogin).catch(() => setLogin(null))
+    api.version().then((v) => setDesktop(!!v.desktop)).catch(() => {})
   }, [])
   useEffect(load, [load])
 
@@ -271,20 +273,26 @@ function SettingsBody() {
             </button>
           </div>
 
-          <h3 className="set-h">This grove</h3>
-          <div className="set-facts">
-            <div>
-              <span className="dim">version</span> <span className="mono">{d.version}</span>
-            </div>
-            <div>
-              <span className="dim">platform</span> <span className="mono">{d.platform}</span>
-            </div>
-            <div>
-              <span className="dim">git</span>{' '}
-              <span className="mono">{d.tools[0]?.version}</span>{' '}
-              <span className="mono set-path">{d.tools[0]?.path}</span>
-            </div>
-          </div>
+          {/* the read-only facts live in About now, under the application
+              menu. A browser tab has no menu bar to put an About in, so it
+              keeps them here rather than losing them. */}
+          {!desktop && (
+            <>
+              <h3 className="set-h">This grove</h3>
+              <div className="set-facts">
+                <div>
+                  <span className="dim">version</span> <span className="mono">{d.version}</span>
+                </div>
+                <div>
+                  <span className="dim">platform</span> <span className="mono">{d.platform}</span>
+                </div>
+                <div>
+                  <span className="dim">git</span> <span className="mono">{d.tools[0]?.version}</span>{' '}
+                  <span className="mono set-path">{d.tools[0]?.path}</span>
+                </div>
+              </div>
+            </>
+          )}
         </>
       )}
     </>
