@@ -64,7 +64,8 @@ type grove struct {
 	reposAt time.Time
 	state   map[string]*repoState // keyed by repo path
 
-	up *updater // nil when -no-update-check said so
+	up   *updater // nil when -no-update-check said so
+	jobs *jobs    // push and pull, watched while they run
 }
 
 func main() {
@@ -98,7 +99,7 @@ func main() {
 	}
 	opt.dir = dir
 
-	d := &grove{opt: opt, state: map[string]*repoState{}}
+	d := &grove{opt: opt, state: map[string]*repoState{}, jobs: newJobs()}
 	if !*noUpdate {
 		d.up = newUpdater()
 		go d.up.watch(context.Background())
@@ -160,6 +161,8 @@ func (d *grove) routes(loopbackOnly bool) http.Handler {
 	mux.HandleFunc("GET /api/version", d.handleVersion)
 	mux.HandleFunc("GET /api/remote", d.handleRemote)
 	mux.HandleFunc("POST /api/remote", d.handleRemoteAction)
+	mux.HandleFunc("POST /api/run", d.handleRun)
+	mux.HandleFunc("GET /api/run", d.handleJob)
 	mux.HandleFunc("POST /api/refresh", d.handleRefresh)
 	mux.HandleFunc("POST /api/revert", d.handleRevert)
 	mux.Handle("/", uiHandler())

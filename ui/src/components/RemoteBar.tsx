@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
 import type { RemoteRepo, RemoteResult } from '../types'
+import { RunLog } from './RunLog'
 
 // Push and Pull, in the checkout's head.
 //
@@ -51,11 +52,11 @@ export function RemoteBar({ name, onChanged }: { name: string; onChanged: () => 
   const [repos, setRepos] = useState<RemoteRepo[] | null>(null)
   const [pick, setPick] = useState<string | null>(null) // repo name; null = the checkout's own
   const [remote, setRemote] = useState<string | null>(null)
-  const [busy, setBusy] = useState<Action | null>(null)
-  // A failure gets a dialog. It used to be a line of red under the buttons,
-  // which pushed the head taller, wrapped over two lines and still had room
-  // for none of what went wrong.
-  const [failed, setFailed] = useState<RemoteResult[] | null>(null)
+  // A push or a pull runs in front of you, command by command: they take
+  // seconds, and a button that says "Pulling…" for ten of them is
+  // indistinguishable from one that has hung. The same dialog is where a
+  // failure is explained, since by then the transcript is the explanation.
+  const [running, setRunning] = useState<Action | null>(null)
   const [done, setDone] = useState('') // a word on the button, and then gone
   const [menu, setMenu] = useState<'push' | 'pull' | null>(null)
   const [asking, setAsking] = useState(false) // the how-to-pull dialog
@@ -73,7 +74,7 @@ export function RemoteBar({ name, onChanged }: { name: string; onChanged: () => 
     setRepos(null)
     setPick(null)
     setRemote(null)
-    setFailed(null)
+    setRunning(null)
     setAsking(false)
     load()
   }, [name, load])
@@ -129,26 +130,9 @@ export function RemoteBar({ name, onChanged }: { name: string; onChanged: () => 
   const advised = repo.ahead === 0 ? 'ff' : repo.pull_mode || ''
 
   const act = (action: Action) => {
-    setBusy(action)
-    setFailed(null)
     setMenu(null)
     setAsking(false)
-    api
-      .remoteAct({ name, repos: [repo.name], action, remote: remote ?? undefined })
-      .then((res) => {
-        setRepos(res.repos)
-        onChanged()
-        const bad = res.results.filter((r) => !r.ok)
-        if (bad.length) {
-          setFailed(bad)
-          return
-        }
-        // success says so where the button already is, and stops saying it
-        setDone(action === 'push' ? 'Pushed' : 'Pulled')
-        window.setTimeout(() => setDone(''), 2500)
-      })
-      .catch((e) => setFailed([{ repo: repo.name, ok: false, detail: String(e.message || e) }]))
-      .finally(() => setBusy(null))
+    setRunning(action)
   }
 
   const which = repo.detached ? 'detached' : repo.branch ?? ''
@@ -159,11 +143,11 @@ export function RemoteBar({ name, onChanged }: { name: string; onChanged: () => 
         <span className={repo.can_push ? 'rb-split on' : 'rb-split'}>
           <button
             className="btn-ghost rb-go"
-            disabled={!repo.can_push || busy !== null}
+            disabled={!repo.can_push || running !== null}
             onClick={() => act('push')}
             title={repo.can_push ? `Fetch, then push ${repo.name} to ${pushTo}` : repo.blocked || 'nothing to push'}
           >
-            {busy === 'push' ? 'Pushing…' : done === 'Pushed' ? 'Pushed' : `Push ${which}`}
+            {done === 'Pushed' ? 'Pushed' : `Push ${which}`}
             {repo.ahead > 0 && <span className="rb-n">↑ {repo.ahead}</span>}
           </button>
           <button
@@ -195,11 +179,11 @@ export function RemoteBar({ name, onChanged }: { name: string; onChanged: () => 
         <span className={repo.can_pull ? 'rb-split on' : 'rb-split'}>
           <button
             className="btn-ghost rb-go"
-            disabled={!repo.can_pull || busy !== null}
+            disabled={!repo.can_pull || running !== null}
             onClick={() => setAsking(true)}
             title={repo.can_pull ? `Bring in ${repo.behind} from ${repo.upstream}` : repo.pull_blocked || 'already up to date'}
           >
-            {busy && busy !== 'push' ? 'Pulling…' : done === 'Pulled' ? 'Pulled' : `Pull ${which}`}
+            {done === 'Pulled' ? 'Pulled' : `Pull ${which}`}
             {repo.behind > 0 && <span className="rb-n">↓ {repo.behind}</span>}
           </button>
           <button
@@ -217,7 +201,23 @@ export function RemoteBar({ name, onChanged }: { name: string; onChanged: () => 
         </span>
       </div>
 
-      {failed && <Failure results={failed} onClose={() => setFailed(null)} />}
+      {running && (
+        <RunLog
+          name={name}
+          repo={repo.name}
+          action={running}
+          remote={remote ?? undefined}
+          onDone={(results, after) => {
+            if (after) setRepos(after)
+            onChanged()
+            if (!results.some((r) => !r.ok)) {
+              setDone(running === 'push' ? 'Pushed' : 'Pulled')
+              window.setTimeout(() => setDone(''), 2500)
+            }
+          }}
+          onClose={() => setRunning(null)}
+        />
+      )}
 
       {asking && (
         <HowToPull repo={repo} offered={offered} advised={advised} onCancel={() => setAsking(false)} onPick={act} />
@@ -301,41 +301,6 @@ function HowToPull({
           </button>
           <button className="btn-ghost rb-go" onClick={() => onPick(mode)} disabled={!offered.length}>
             {WAYS.find((w) => w.mode === mode)?.label ?? 'Pull'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// What went wrong, at length, in front of the reader — grove's explanation
-// where it has one, and git's own words either way, since git explains itself
-// better than any paraphrase and the person reading has to act on it.
-function Failure({ results, onClose }: { results: RemoteResult[]; onClose: () => void }) {
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-        <h2 className="modal-title">
-          {results.length === 1 ? 'That did not go through' : 'Some of that did not go through'}
-        </h2>
-        <div className="modal-body">
-          {results.map((r, i) => (
-            <div key={i} className="fail">
-              <div className="fail-head">
-                <span className="mono">{r.repo}</span> — {r.detail}
-              </div>
-              {r.why && <p className="fail-why">{r.why}</p>}
-              {r.git && <pre className="fail-git">{r.git}</pre>}
-            </div>
-          ))}
-          <p className="dim fail-safe">
-            Nothing was left half-done: grove undoes each step it cannot finish, so the repository is
-            where it was before you pressed the button.
-          </p>
-        </div>
-        <div className="modal-actions">
-          <button className="btn-ghost" onClick={onClose}>
-            Close
           </button>
         </div>
       </div>

@@ -155,7 +155,7 @@ func remoteRepos(c Checkout) []RemoteRepo {
 //
 // The one thing that cannot be undone is losing them, so they stay in the
 // stash if they will not come back cleanly, and the message says so.
-func rebaseWithStash(name, root, upstream string) RepoResult {
+func rebaseWithStash(name, root, upstream string, job *Job) RepoResult {
 	fail := func(detail, out, why string) RepoResult {
 		return RepoResult{Repo: name, Detail: detail, Git: out, Why: why}
 	}
@@ -164,12 +164,20 @@ func rebaseWithStash(name, root, upstream string) RepoResult {
 		return fail("cannot read HEAD", err.Error(), "")
 	}
 
+	// A submodule at a different commit than the parent records keeps the
+	// parent modified, and a stash will not clean it: git stores the recorded
+	// pointer and leaves the submodule's own checkout alone. So the submodules
+	// are moved to what the parent records first, and moved back afterwards —
+	// on every way out of this function, including the failures.
+	parked, parkErr := parkSubmodules(root, name, job)
+	defer unparkSubmodules(root, name, job, parked)
+
 	dirty, _ := git(root, "status", "--porcelain", "-uall")
 	stashed := false
 	if dirty != "" {
 		// --include-untracked: a file you have not added can still be in the
 		// way of one the rebase wants to create
-		out, err := gitSays(root, "stash", "push", "--include-untracked",
+		out, err := say(job, name, root, "stash", "push", "--include-untracked",
 			"-m", "grove: rebasing onto "+upstream)
 		if err != nil {
 			return fail("could not set your changes aside, so nothing was done", out, "")
@@ -184,17 +192,20 @@ func rebaseWithStash(name, root, upstream string) RepoResult {
 	// parent is still modified and no amount of stashing will change that.
 	if left, _ := git(root, "status", "--porcelain"); left != "" {
 		if stashed {
-			gitSays(root, "stash", "pop")
+			say(job, name, root, "stash", "pop")
 		}
-		return fail("still uncommitted after stashing, so the rebase was not started", left,
-			whyStillDirty(root, left))
+		why := whyStillDirty(root, left)
+		if parkErr != "" {
+			why = parkErr + " " + why
+		}
+		return fail("still uncommitted after stashing, so the rebase was not started", left, why)
 	}
 
-	if out, err := gitSays(root, "rebase", upstream); err != nil {
+	if out, err := say(job, name, root, "rebase", upstream); err != nil {
 		// back to where we started, and hand the changes back
-		gitSays(root, "rebase", "--abort")
+		say(job, name, root, "rebase", "--abort")
 		if stashed {
-			gitSays(root, "stash", "pop")
+			say(job, name, root, "stash", "pop")
 		}
 		return fail("the rebase stopped and was undone — nothing changed", out, whyRebaseFailed(out))
 	}
@@ -203,12 +214,12 @@ func rebaseWithStash(name, root, upstream string) RepoResult {
 		return RepoResult{Repo: name, Ok: true, Detail: "rebased onto " + upstream}
 	}
 
-	if out, err := gitSays(root, "stash", "pop"); err != nil {
+	if out, err := say(job, name, root, "stash", "pop"); err != nil {
 		// The rebase worked and the changes will not sit on top of it. A
 		// rebased branch plus a stash nobody asked for is exactly the
 		// in-between state this exists to avoid, so put it all back.
-		gitSays(root, "reset", "--hard", start)
-		if _, again := gitSays(root, "stash", "pop"); again != nil {
+		say(job, name, root, "reset", "--hard", start)
+		if _, again := say(job, name, root, "stash", "pop"); again != nil {
 			return fail("your changes conflict with "+upstream+"; the rebase was undone and they are waiting in the stash", out,
 				"Run `git stash pop` when you have decided what to keep. Nothing was lost — the stash still holds every change you had.")
 		}
@@ -218,9 +229,69 @@ func rebaseWithStash(name, root, upstream string) RepoResult {
 	return RepoResult{Repo: name, Ok: true, Detail: "rebased onto " + upstream + ", your changes back on top"}
 }
 
-// whyStillDirty explains a tree that a stash could not clean. Every entry in
-// `status --porcelain` for a submodule path is one git will not let a rebase
-// past and will not stash away either.
+// parked is a submodule moved to the commit the parent records, and where it
+// was before — a branch name if it was on one, its commit if it was not.
+type parked struct{ path, was string }
+
+// parkSubmodules puts every submodule at the commit the parent records, so the
+// parent's tree is clean enough to rebase. Nothing is lost by it: the
+// submodule's own commits stay in its object store and it goes back to exactly
+// where it was afterwards.
+//
+// A submodule with uncommitted work of its own cannot be moved, and git says
+// so rather than overwriting it. That one is left alone and named.
+func parkSubmodules(root, name string, job *Job) ([]parked, string) {
+	status, err := git(root, "status", "--porcelain")
+	if err != nil || status == "" {
+		return nil, ""
+	}
+	var out []parked
+	var refused []string
+	for _, line := range strings.Split(status, "\n") {
+		if len(line) < 4 {
+			continue
+		}
+		rel := strings.TrimSpace(line[2:])
+		path := filepath.Join(root, rel)
+		if _, err := os.Stat(filepath.Join(path, ".git")); err != nil {
+			continue // not a submodule
+		}
+		// where it is now: the branch if it is on one, the commit otherwise
+		was, err := git(path, "symbolic-ref", "--quiet", "--short", "HEAD")
+		if err != nil || was == "" {
+			if was, err = git(path, "rev-parse", "HEAD"); err != nil {
+				continue
+			}
+		}
+		if _, err := say(job, name, root, "submodule", "update", "--checkout", "--", rel); err != nil {
+			refused = append(refused, rel)
+			continue
+		}
+		out = append(out, parked{rel, was})
+	}
+	if len(refused) > 0 {
+		return out, plural(len(refused), "The submodule ", "The submodules ") +
+			strings.Join(refused, ", ") + plural(len(refused), " has", " have") +
+			" uncommitted work inside, which grove will not move or overwrite."
+	}
+	return out, ""
+}
+
+// unparkSubmodules puts them back exactly where they were.
+func unparkSubmodules(root, name string, job *Job, parked []parked) {
+	for _, p := range parked {
+		say(job, name+"/"+p.path, filepath.Join(root, p.path), "checkout", "--quiet", p.was)
+	}
+}
+
+// whyStillDirty explains a tree that neither the stash nor moving the
+// submodules could clean.
+//
+// A submodule merely sitting at a different commit is no longer this case —
+// parkSubmodules deals with that one. What is left is a submodule holding
+// uncommitted work of its own, which grove will not touch: moving it would
+// mean overwriting somebody's edits to get a rebase through, and no rebase is
+// worth that.
 func whyStillDirty(root, status string) string {
 	var subs []string
 	for _, line := range strings.Split(status, "\n") {
@@ -236,11 +307,9 @@ func whyStillDirty(root, status string) string {
 		return "Something changed the working tree between the stash and the check. Nothing was done to it."
 	}
 	return plural(len(subs), "The submodule ", "The submodules ") + strings.Join(subs, ", ") +
-		plural(len(subs), " sits", " sit") + " at a different commit than this repository records. " +
-		"git stashes the recorded pointer and leaves the submodule's own checkout alone, so the tree " +
-		"stays modified and a rebase will not start. Either commit the " +
-		plural(len(subs), "new pointer", "new pointers") +
-		", or put the submodule back with `git submodule update`."
+		plural(len(subs), " holds", " hold") + " uncommitted work inside, and a rebase of this " +
+		"repository cannot start while it does. grove will not move or overwrite it to get one " +
+		"through. Commit or stash that work inside the submodule, and this will go."
 }
 
 // whyRebaseFailed reads git's refusal and says the same thing in fewer words,
@@ -504,7 +573,7 @@ func (d *grove) handleRemoteAction(w http.ResponseWriter, r *http.Request) {
 		// publish exactly the broken state this refuses to publish.
 		for i := len(targets) - 1; i >= 0; i-- {
 			t := targets[i]
-			results = append(results, doRemote(t, standing[t.Name], req.Action, req.Remote))
+			results = append(results, doRemote(t, standing[t.Name], req.Action, req.Remote, nil))
 		}
 	}
 	// every one of these changes what a scan would find
@@ -518,7 +587,7 @@ func (d *grove) handleRemoteAction(w http.ResponseWriter, r *http.Request) {
 // doRemote runs one action in one repository, against a standing read AFTER
 // the fetch — never against whatever the page happened to be showing when the
 // button was clicked.
-func doRemote(t subRepo, rr RemoteRepo, action, remote string) RepoResult {
+func doRemote(t subRepo, rr RemoteRepo, action, remote string, job *Job) RepoResult {
 	res := RepoResult{Repo: t.Name}
 	switch action {
 	case "rebase", "merge", "ff":
@@ -532,7 +601,7 @@ func doRemote(t subRepo, rr RemoteRepo, action, remote string) RepoResult {
 
 		if action == "rebase" {
 			// a rebase wants a clean tree; getting one is this function's job
-			return rebaseWithStash(t.Name, t.Path, rr.Upstream)
+			return rebaseWithStash(t.Name, t.Path, rr.Upstream, job)
 		}
 		args := []string{"merge", "--ff-only", rr.Upstream}
 		if action == "merge" {
@@ -541,7 +610,7 @@ func doRemote(t subRepo, rr RemoteRepo, action, remote string) RepoResult {
 		}
 		// no autostash and no strategy flags: a conflict should stop and be
 		// dealt with in a terminal, not be papered over from a dashboard
-		if out, err := gitSays(t.Path, args...); err != nil {
+		if out, err := say(job, t.Name, t.Path, args...); err != nil {
 			return RepoResult{
 				Repo:   t.Name,
 				Detail: "git " + strings.Join(args, " ") + " did not go through",
@@ -568,7 +637,7 @@ func doRemote(t subRepo, rr RemoteRepo, action, remote string) RepoResult {
 		if rr.Upstream == "" || (remote != "" && !strings.HasPrefix(rr.Upstream, to+"/")) {
 			args = append(args, "--set-upstream", to, rr.Branch)
 		}
-		if out, err := gitSays(t.Path, args...); err != nil {
+		if out, err := say(job, t.Name, t.Path, args...); err != nil {
 			return RepoResult{
 				Repo:   t.Name,
 				Detail: "the push did not go through",
@@ -585,4 +654,18 @@ func doRemote(t subRepo, rr RemoteRepo, action, remote string) RepoResult {
 		res.Ok, res.Detail = true, "pushed to "+where
 		return res
 	}
+}
+
+// say runs a git command and writes it into the job's transcript, so the page
+// watching can show what grove is doing while it is doing it. A nil job means
+// nobody is watching, and it is an ordinary call.
+func say(job *Job, name, dir string, args ...string) (string, error) {
+	if job != nil {
+		job.cmd(name, args)
+	}
+	out, err := gitSays(dir, args...)
+	if job != nil {
+		job.out(out)
+	}
+	return out, err
 }

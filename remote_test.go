@@ -155,7 +155,7 @@ func TestPushAndRebaseAgainstARealRemote(t *testing.T) {
 
 	rr := readRemote(work)
 	rr.CanPush, rr.Blocked = pushable(rr)
-	if res := doRemote(self, rr, "push", ""); !res.Ok {
+	if res := doRemote(self, rr, "push", "", nil); !res.Ok {
 		t.Fatalf("push refused: %s", res.Detail)
 	}
 	if out, _ := git(remote, "log", "--oneline", "-1", "main"); !strings.Contains(out, "mine") {
@@ -186,7 +186,7 @@ func TestPushAndRebaseAgainstARealRemote(t *testing.T) {
 	}
 
 	// rebase takes us onto it, and then the push goes
-	if res := doRemote(self, rr, "rebase", ""); !res.Ok {
+	if res := doRemote(self, rr, "rebase", "", nil); !res.Ok {
 		t.Fatalf("rebase failed: %s", res.Detail)
 	}
 	rr = readRemote(work)
@@ -194,7 +194,7 @@ func TestPushAndRebaseAgainstARealRemote(t *testing.T) {
 	if !rr.CanPush {
 		t.Fatalf("still cannot push after rebasing: %s", rr.Blocked)
 	}
-	if res := doRemote(self, rr, "push", ""); !res.Ok {
+	if res := doRemote(self, rr, "push", "", nil); !res.Ok {
 		t.Fatalf("push after rebase refused: %s", res.Detail)
 	}
 	if out, _ := git(remote, "log", "--oneline", "main"); !strings.Contains(out, "mine again") || !strings.Contains(out, "theirs") {
@@ -234,7 +234,7 @@ func TestADirtyTreeCanStillPull(t *testing.T) {
 		t.Error("a dirty tree was refused a pull it could have had")
 	}
 	// the fast-forward it can have goes through, edit and all
-	if res := doRemote(subRepo{Name: "work", Path: work}, rr, "ff", ""); !res.Ok {
+	if res := doRemote(subRepo{Name: "work", Path: work}, rr, "ff", "", nil); !res.Ok {
 		t.Errorf("a fast-forward past an unrelated edit was refused: %s", res.Detail)
 	}
 	if out, _ := git(work, "status", "--porcelain"); !strings.Contains(out, "a.txt") {
@@ -250,7 +250,7 @@ func TestRebaseCarriesUncommittedWorkOver(t *testing.T) {
 	write(t, work, "wip.txt", "work in progress\n") // untracked, and in nobody's way
 
 	rr := readRemote(work)
-	res := doRemote(subRepo{Name: "work", Path: work}, rr, "rebase", "")
+	res := doRemote(subRepo{Name: "work", Path: work}, rr, "rebase", "", nil)
 	if !res.Ok {
 		t.Fatalf("the rebase was refused: %s", res.Detail)
 	}
@@ -279,7 +279,7 @@ func TestARebaseThatCannotBePutBackUndoesItself(t *testing.T) {
 
 	before, _ := git(work, "rev-parse", "HEAD")
 	rr := readRemote(work)
-	res := doRemote(subRepo{Name: "work", Path: work}, rr, "rebase", "")
+	res := doRemote(subRepo{Name: "work", Path: work}, rr, "rebase", "", nil)
 	if res.Ok {
 		t.Fatal("a rebase that could not be put back reported success")
 	}
@@ -423,14 +423,94 @@ func TestANestedSubmoduleStopsItsOwnParent(t *testing.T) {
 	_ = leaf
 }
 
-// The failure Martin hit, which reached the screen as "exit status 1".
-//
 // A submodule sitting at a different commit than the parent records leaves the
 // parent modified, and `git stash` cannot clean that: it stores the recorded
-// pointer and leaves the submodule's own checkout where it is. So the tree is
-// still dirty after stashing and the rebase refuses — for a reason worth
-// saying out loud rather than a status code.
-func TestASubmoduleAtAnotherCommitStopsTheRebaseAndSaysWhy(t *testing.T) {
+// pointer and leaves the submodule's own checkout where it is. This used to
+// stop the rebase outright. It does not any more — the submodule is moved to
+// what the parent records, the rebase runs, and it is put back — and this
+// walks the whole of that.
+func TestARebaseMovesASubmoduleOutOfTheWayAndBack(t *testing.T) {
+	top, subIn, first := parentWithMovedSubmodule(t)
+	before, _ := git(top, "rev-parse", "HEAD")
+
+	behindBefore, _ := git(top, "rev-list", "--count", "HEAD..@{upstream}")
+	res := doRemote(subRepo{Name: "top", Path: top}, readRemote(top), "rebase", "", nil)
+	if !res.Ok {
+		t.Fatalf("the rebase was refused over a submodule that could simply be moved: %s\n%s\n%s",
+			res.Detail, res.Why, res.Git)
+	}
+
+	// the parent moved on
+	if after, _ := git(top, "rev-parse", "HEAD"); after == before {
+		t.Error("HEAD did not move, so the rebase did not happen")
+	}
+	if out, _ := git(top, "rev-list", "--count", "HEAD..@{upstream}"); out != "0" {
+		t.Errorf("still %s behind after rebasing (was %s)", out, behindBefore)
+	}
+	// and the submodule is back exactly where it was, which is what made the
+	// parent look modified in the first place
+	if at, _ := git(subIn, "rev-parse", "HEAD"); at != first {
+		t.Errorf("the submodule was left at %s, not the %s it was on", at, first)
+	}
+	if out, _ := git(top, "status", "--porcelain"); !strings.Contains(out, "vendor/sub") {
+		t.Errorf("the submodule was quietly bumped instead of put back: %q", out)
+	}
+	if out, _ := git(top, "stash", "list"); out != "" {
+		t.Errorf("a stash was left behind: %q", out)
+	}
+}
+
+// A submodule with uncommitted work inside it cannot be moved out of the way,
+// and grove must not overwrite it to get a rebase through. That one is
+// refused, by name, with the tree exactly as it was.
+func TestASubmoduleWithItsOwnWorkIsNotMovedForARebase(t *testing.T) {
+	requireGit(t)
+	top, subIn, _ := parentWithMovedSubmodule(t)
+	// An edit git cannot carry across the move: two.txt exists at the commit
+	// the parent records and not at the one the submodule is on, so checking
+	// it out would have to delete a file with uncommitted changes in it.
+	gitRun(t, subIn, "checkout", "--quiet", "main")
+	write(t, subIn, "two.txt", "edited, not committed\n")
+
+	before, _ := git(top, "rev-parse", "HEAD")
+	res := doRemote(subRepo{Name: "top", Path: top}, readRemote(top), "rebase", "", nil)
+	if res.Ok {
+		t.Fatal("a submodule holding uncommitted work was moved anyway")
+	}
+	if !strings.Contains(res.Why, "uncommitted work inside") {
+		t.Errorf("the explanation does not say what is in the way: %q", res.Why)
+	}
+	if after, _ := git(top, "rev-parse", "HEAD"); after != before {
+		t.Errorf("HEAD moved: %s -> %s", before, after)
+	}
+	if got, err := os.ReadFile(filepath.Join(subIn, "two.txt")); err != nil || string(got) != "edited, not committed\n" {
+		t.Errorf("the submodule's own work is gone: %q (%v)", got, err)
+	}
+}
+
+// A failure must carry what git said. Output() keeps stderr on the ExitError
+// and throws it away everywhere else, which is how a rebase that stopped for a
+// nameable reason arrived on screen as "exit status 1".
+func TestGitFailuresCarryGitsWords(t *testing.T) {
+	requireGit(t)
+	repo := initRepo(t, filepath.Join(t.TempDir(), "r"))
+	_, err := git(repo, "rev-parse", "--verify", "refs/heads/nope")
+	if err == nil {
+		t.Fatal("expected a failure")
+	}
+	if strings.Contains(err.Error(), "exit status") {
+		t.Errorf("the error is a status code and nothing else: %q", err)
+	}
+	out, err := gitSays(repo, "checkout", "no-such-branch")
+	if err == nil || out == "" {
+		t.Errorf("gitSays lost what git said: %q (%v)", out, err)
+	}
+}
+
+// parentWithMovedSubmodule is a checkout one commit behind its upstream whose
+// submodule sits at an earlier commit than the parent records — the state that
+// makes `git status` say ` M vendor/sub` and a plain stash useless.
+func parentWithMovedSubmodule(t testing.TB) (top, subIn, first string) {
 	requireGit(t)
 	dir := t.TempDir()
 	subRemote := filepath.Join(dir, "sub.git")
@@ -443,7 +523,8 @@ func TestASubmoduleAtAnotherCommitStopsTheRebaseAndSaysWhy(t *testing.T) {
 	gitRun(t, sub, "push", "-q", "-u", "origin", "main")
 	// the commit the submodule will be moved back to, named outright: HEAD~1
 	// is one more thing that can resolve differently somewhere else
-	first, err := git(sub, "rev-parse", "HEAD")
+	var err error
+	first, err = git(sub, "rev-parse", "HEAD")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -452,12 +533,12 @@ func TestASubmoduleAtAnotherCommitStopsTheRebaseAndSaysWhy(t *testing.T) {
 	gitRun(t, sub, "commit", "-q", "-m", "second")
 	gitRun(t, sub, "push", "-q", "origin", "main")
 
-	top := initRepo(t, filepath.Join(dir, "top"))
+	top = initRepo(t, filepath.Join(dir, "top"))
 	gitRun(t, top, "remote", "add", "origin", topRemote)
 	gitRun(t, top, "-c", "protocol.file.allow=always", "submodule", "add", "-q", subRemote, "vendor/sub")
 	gitRun(t, top, "commit", "-q", "-m", "add submodule")
 	gitRun(t, top, "push", "-q", "-u", "origin", "main")
-	subIn := filepath.Join(top, "vendor", "sub")
+	subIn = filepath.Join(top, "vendor", "sub")
 	identify(t, subIn)
 
 	// somebody moves the parent's branch on, so there is something to rebase onto
@@ -481,48 +562,6 @@ func TestASubmoduleAtAnotherCommitStopsTheRebaseAndSaysWhy(t *testing.T) {
 	if out, _ := git(top, "status", "--porcelain"); !strings.Contains(out, "vendor/sub") {
 		t.Fatalf("the fixture is not in the state under test: %q", out)
 	}
-	before, _ := git(top, "rev-parse", "HEAD")
 
-	res := doRemote(subRepo{Name: "top", Path: top}, readRemote(top), "rebase", "")
-	if res.Ok {
-		t.Fatal("the rebase reported success over a tree a stash cannot clean")
-	}
-	if !strings.Contains(res.Detail, "still uncommitted after stashing") {
-		t.Errorf("detail does not name the problem: %q", res.Detail)
-	}
-	if !strings.Contains(res.Why, "submodule") || !strings.Contains(res.Why, "vendor/sub") {
-		t.Errorf("the explanation does not name the submodule: %q", res.Why)
-	}
-	if res.Git == "" {
-		t.Error("git's own words were dropped")
-	}
-	// and nothing moved
-	if after, _ := git(top, "rev-parse", "HEAD"); after != before {
-		t.Errorf("HEAD moved: %s -> %s", before, after)
-	}
-	if out, _ := git(top, "stash", "list"); out != "" {
-		t.Errorf("a stash was left behind: %q", out)
-	}
-	if out, _ := git(top, "status", "--porcelain"); !strings.Contains(out, "vendor/sub") {
-		t.Errorf("the submodule is no longer where it was: %q", out)
-	}
-}
-
-// A failure must carry what git said. Output() keeps stderr on the ExitError
-// and throws it away everywhere else, which is how a rebase that stopped for a
-// nameable reason arrived on screen as "exit status 1".
-func TestGitFailuresCarryGitsWords(t *testing.T) {
-	requireGit(t)
-	repo := initRepo(t, filepath.Join(t.TempDir(), "r"))
-	_, err := git(repo, "rev-parse", "--verify", "refs/heads/nope")
-	if err == nil {
-		t.Fatal("expected a failure")
-	}
-	if strings.Contains(err.Error(), "exit status") {
-		t.Errorf("the error is a status code and nothing else: %q", err)
-	}
-	out, err := gitSays(repo, "checkout", "no-such-branch")
-	if err == nil || out == "" {
-		t.Errorf("gitSays lost what git said: %q (%v)", out, err)
-	}
+	return top, subIn, first
 }

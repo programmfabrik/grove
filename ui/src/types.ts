@@ -118,3 +118,13 @@ export type RemoteRepo = {
 }
 export type RemoteState = { name: string; repo?: string; repos: RemoteRepo[] }
 export type RemoteResult = { repo: string; ok: boolean; detail?: string; git?: string; why?: string }
+
+// One line of a push or pull as it happens. See job.go.
+export type JobLine = { kind: 'cmd' | 'out' | 'ok' | 'err' | 'note'; dir?: string; text: string }
+export type JobState = {
+  lines: JobLine[]
+  next: number
+  done: boolean
+  results?: RemoteResult[]
+  repos?: RemoteRepo[]
+}

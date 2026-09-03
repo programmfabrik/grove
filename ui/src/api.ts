@@ -1,4 +1,4 @@
-import type { DiffFile, RemoteResult, RemoteState, Repo, ScopeRepo, State, Update } from './types'
+import type { DiffFile, JobState, RemoteResult, RemoteState, Repo, ScopeRepo, State, Update } from './types'
 
 async function j<T>(r: Response): Promise<T> {
   if (!r.ok) {
@@ -85,6 +85,21 @@ export const api = {
   // fetch, push, rebase or merge. Always fetches first, always every
   // repository under the checkout, because whether the parent may push
   // depends on what the submodules' remotes hold.
+  // a push or a pull, watched while it runs: start it, then read the
+  // transcript as it is written
+  run: (body: {
+    name: string
+    repos: string[]
+    action: 'push' | 'rebase' | 'merge' | 'ff'
+    remote?: string
+  }): Promise<{ job: string }> =>
+    fetch('api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then((r) => j<{ job: string }>(r)),
+  job: (id: string, after: number): Promise<JobState> =>
+    fetch(`api/run?job=${encodeURIComponent(id)}&after=${after}`).then((r) => j<JobState>(r)),
   remoteAct: (body: {
     name: string
     repos: string[]

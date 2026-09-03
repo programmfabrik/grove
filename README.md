@@ -517,11 +517,17 @@ unrelated file is a wrong answer. A rebase genuinely does want a clean tree, so
 grove gets one: the changes are stashed, the rebase runs, the stash is popped
 back on top, and the dialog says as much before you agree to it.
 
-One thing a stash cannot clean is a submodule sitting at a different commit
-than the parent records: git stashes the recorded pointer and leaves the
-submodule's own checkout alone, so the tree stays modified and the rebase will
-not start. grove checks after stashing rather than after failing, hands the
-changes straight back, and says which submodule and what the two cures are.
+A stash cannot clean a submodule sitting at a different commit than the parent
+records: git stashes the recorded pointer and leaves the submodule's own
+checkout alone, so the tree stays modified and a rebase will not start. That is
+not a reason to refuse either. The submodule is moved to what the parent
+records (`git submodule update --checkout`), the rebase runs, and it is put
+back exactly where it was — on the branch it was on if it was on one. Nothing
+is lost by the trip: its commits never leave its own object store.
+
+The one submodule grove will not move is one holding uncommitted work of its
+own. Moving it would mean overwriting somebody's edits to get a rebase through,
+and no rebase is worth that, so it is named and the rebase is not started.
 
 That sequence has three steps that can fail, and a half-finished one is worse
 than not having started — a branch rebased under you and a stash to reconcile
@@ -532,8 +538,17 @@ working tree exactly where they were. There are two outcomes and no third. The
 one thing that is never done is discarding the changes — if they will not come
 back cleanly they stay in the stash and the message says so.
 
-**When something does not go through**, it goes in a dialog rather than under
-the buttons — a line of red in the head pushes the layout around and still has
+**A push or a pull happens in front of you.** They take seconds and sometimes
+tens of them, and a button reading "Pulling…" for ten of them is
+indistinguishable from one that has hung — so a dialog shows each git command
+as it runs and what it said. It is a transcript rather than a spinner on
+purpose: everything grove does to a repository is a command somebody could have
+typed, and showing which ones, in order, is the difference between a tool you
+trust with your work and one you hope about.
+
+**When something does not go through**, the transcript is already the
+explanation, and grove's own reading of it is added underneath rather than
+under the buttons — a line of red in the head pushes the layout around and still has
 room for none of what happened. The dialog carries grove's explanation where it
 recognises the failure, and git's own words either way, because git explains
 itself better than any paraphrase and the person reading has to act on it. A
@@ -652,6 +667,7 @@ cd ui && npm run dev
 | `preview.go` | `/api/blob` — bytes of a renderable file, at either revision |
 | `revert.go` | `/api/revert` — unstage and discard |
 | `remote.go` | `/api/remote` — where each repository stands with its remote, and push, fetch, rebase, merge |
+| `job.go` | `/api/run` — a push or a pull as a transcript the page can watch while it runs |
 | `paths.go` | the one spelling a path is kept in — see below |
 | `front_cli.go` | the default front door: serve it and say where it is |
 | `front_desktop.go` | `-tags desktop` — the window, its menu and the folder dialog |
