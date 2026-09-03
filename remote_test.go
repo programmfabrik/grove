@@ -109,12 +109,21 @@ func TestPushableRefusals(t *testing.T) {
 
 // identify gives a repository an author, which a clone does not inherit and a
 // machine with no global git config cannot supply.
+//
+// Turning core.autocrlf off has to be followed by re-checking-out the tracked
+// files. A clone on Windows has already written them with CRLF under the
+// global setting, and flipping the setting afterwards leaves every one of them
+// looking modified against the LF in the index — which is a dirty tree the
+// fixture never asked for, and it failed a `git checkout` two steps later.
 func identify(t testing.TB, path string) {
 	t.Helper()
-	gitRun(t, path, "config", "core.autocrlf", "false") // see initRepo
+	gitRun(t, path, "config", "core.autocrlf", "false")
 	gitRun(t, path, "config", "user.email", "grove@example.com")
 	gitRun(t, path, "config", "user.name", "grove")
 	gitRun(t, path, "config", "commit.gpgsign", "false")
+	if _, err := git(path, "rev-parse", "--verify", "--quiet", "HEAD"); err == nil {
+		gitRun(t, path, "checkout", "--", ".")
+	}
 }
 
 func byName(repos []RemoteRepo, name string) RemoteRepo {
