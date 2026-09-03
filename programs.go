@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -37,22 +38,42 @@ type known struct {
 	Line           string // goto | colon | plus | none
 }
 
+// The catalogue is not the list of what you have — that is whatever is on the
+// disk, and Choose an application… reaches all of it. This is what grove knows
+// something EXTRA about: where the command line tool hides inside the bundle,
+// and how to tell it a line number. An app that is not here still works; it
+// just opens the file rather than the line.
 var catalogue = []known{
 	// browsers — a link, no line to worry about
 	{ID: "safari", Name: "Safari", Kind: "browser", App: "Safari"},
+	{ID: "safari-tp", Name: "Safari Technology Preview", Kind: "browser", App: "Safari Technology Preview"},
 	{ID: "chrome", Name: "Google Chrome", Kind: "browser", App: "Google Chrome"},
+	{ID: "chrome-canary", Name: "Google Chrome Canary", Kind: "browser", App: "Google Chrome Canary"},
+	{ID: "chromium", Name: "Chromium", Kind: "browser", App: "Chromium"},
 	{ID: "firefox", Name: "Firefox", Kind: "browser", App: "Firefox"},
+	{ID: "firefox-dev", Name: "Firefox Developer Edition", Kind: "browser", App: "Firefox Developer Edition"},
 	{ID: "arc", Name: "Arc", Kind: "browser", App: "Arc"},
 	{ID: "brave", Name: "Brave Browser", Kind: "browser", App: "Brave Browser"},
 	{ID: "edge", Name: "Microsoft Edge", Kind: "browser", App: "Microsoft Edge"},
+	{ID: "vivaldi", Name: "Vivaldi", Kind: "browser", App: "Vivaldi"},
+	{ID: "opera", Name: "Opera", Kind: "browser", App: "Opera"},
+	{ID: "orion", Name: "Orion", Kind: "browser", App: "Orion"},
+	{ID: "zen", Name: "Zen", Kind: "browser", App: "Zen"},
+	{ID: "librewolf", Name: "LibreWolf", Kind: "browser", App: "LibreWolf"},
 
-	// terminals — a directory to start in
+	// terminals — a directory to start in. Nothing in a bundle says "I am a
+	// terminal", so unlike the other two this list is the only way grove
+	// recognises one by itself; anything missing is still reachable through
+	// Choose an application….
 	{ID: "warp", Name: "Warp", Kind: "terminal", App: "Warp"},
 	{ID: "ghostty", Name: "Ghostty", Kind: "terminal", App: "Ghostty"},
 	{ID: "iterm", Name: "iTerm", Kind: "terminal", App: "iTerm"},
 	{ID: "kitty", Name: "kitty", Kind: "terminal", App: "kitty"},
 	{ID: "alacritty", Name: "Alacritty", Kind: "terminal", App: "Alacritty"},
 	{ID: "wezterm", Name: "WezTerm", Kind: "terminal", App: "WezTerm"},
+	{ID: "rio", Name: "Rio", Kind: "terminal", App: "Rio"},
+	{ID: "hyper", Name: "Hyper", Kind: "terminal", App: "Hyper"},
+	{ID: "tabby", Name: "Tabby", Kind: "terminal", App: "Tabby"},
 	{ID: "terminal", Name: "Terminal", Kind: "terminal", App: "Terminal"},
 
 	// editors — a file, and the line it is on
@@ -70,9 +91,26 @@ var catalogue = []known{
 		CLI: "Contents/MacOS/goland", Bin: "goland", Line: "goland"},
 	{ID: "idea", Name: "IntelliJ IDEA", Kind: "editor", App: "IntelliJ IDEA",
 		CLI: "Contents/MacOS/idea", Bin: "idea", Line: "goland"},
+	{ID: "vscodium", Name: "VSCodium", Kind: "editor", App: "VSCodium",
+		CLI: "Contents/Resources/app/bin/codium", Bin: "codium", Line: "goto"},
+	{ID: "webstorm", Name: "WebStorm", Kind: "editor", App: "WebStorm",
+		CLI: "Contents/MacOS/webstorm", Bin: "webstorm", Line: "goland"},
+	{ID: "pycharm", Name: "PyCharm", Kind: "editor", App: "PyCharm",
+		CLI: "Contents/MacOS/pycharm", Bin: "pycharm", Line: "goland"},
+	{ID: "rubymine", Name: "RubyMine", Kind: "editor", App: "RubyMine",
+		CLI: "Contents/MacOS/rubymine", Bin: "rubymine", Line: "goland"},
+	{ID: "textmate", Name: "TextMate", Kind: "editor", App: "TextMate",
+		CLI: "Contents/Resources/mate", Bin: "mate", Line: "textmate"},
+	{ID: "nova", Name: "Nova", Kind: "editor", App: "Nova", Bin: "nova", Line: "colon"},
+	{ID: "typora", Name: "Typora", Kind: "editor", App: "Typora"},
+	{ID: "xcode", Name: "Xcode", Kind: "editor", App: "Xcode"},
+	{ID: "textedit", Name: "TextEdit", Kind: "editor", App: "TextEdit"},
+	{ID: "bbedit", Name: "BBEdit", Kind: "editor", App: "BBEdit", Bin: "bbedit", Line: "plus"},
+	{ID: "helix", Name: "Helix", Kind: "editor", Bin: "hx", Line: "colon"},
 	{ID: "nvim", Name: "Neovim", Kind: "editor", Bin: "nvim", Line: "plus"},
 	{ID: "vim", Name: "Vim", Kind: "editor", Bin: "vim", Line: "plus"},
 	{ID: "emacs", Name: "Emacs", Kind: "editor", Bin: "emacs", Line: "plus"},
+	{ID: "micro", Name: "micro", Kind: "editor", Bin: "micro", Line: "plus"},
 }
 
 // Program is one that is actually here.
@@ -148,9 +186,29 @@ func appDirs() []string {
 	return dirs
 }
 
+// programByID resolves what was chosen. A plain id is one grove knows about;
+// "path:/Applications/Whatever.app" is one somebody pointed at themselves,
+// which is how the choice reaches every program on the disk rather than only
+// the ones this file has heard of.
 func programByID(id string) (known, Program, bool) {
 	if id == "" {
 		return known{}, Program{}, false
+	}
+	if path, ok := strings.CutPrefix(id, "path:"); ok {
+		if _, err := os.Stat(path); err != nil {
+			return known{}, Program{}, false
+		}
+		name := strings.TrimSuffix(filepath.Base(path), ".app")
+		// a bundle grove happens to know is still opened the way it knows how,
+		// so choosing VS Code by hand does not lose the line numbers
+		for _, k := range catalogue {
+			if k.App != "" && k.App == name {
+				if p, found := k.find(); found {
+					return k, p, true
+				}
+			}
+		}
+		return known{}, Program{ID: id, Name: name, How: "app", Path: path}, true
 	}
 	for _, p := range findPrograms() {
 		if p.ID == id {
@@ -185,6 +243,10 @@ func (k known) command(p Program, target string, line int) *exec.Cmd {
 	case "goland": // idea --line n file
 		if line > 0 {
 			return exec.Command(p.Path, "--line", strconv.Itoa(line), target)
+		}
+	case "textmate": // mate -l n file
+		if line > 0 {
+			return exec.Command(p.Path, "-l", strconv.Itoa(line), target)
 		}
 	}
 	return exec.Command(p.Path, target)
@@ -225,8 +287,20 @@ func systemOpen(kind, target string) error {
 // handlePrograms lists what is here, so the settings can offer it.
 func (d *grove) handlePrograms(w http.ResponseWriter, r *http.Request) {
 	s := loadSettings()
+	found := findPrograms()
+	// a program somebody pointed at themselves is in the list too, or the
+	// select would have nothing to show as chosen
+	for kind, id := range map[string]string{"browser": s.Browser, "terminal": s.Terminal, "editor": s.Editor} {
+		if !strings.HasPrefix(id, "path:") {
+			continue
+		}
+		if _, p, ok := programByID(id); ok {
+			p.ID, p.Kind = id, kind
+			found = append(found, p)
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"programs": findPrograms(),
+		"programs": found,
 		"chosen":   map[string]string{"browser": s.Browser, "terminal": s.Terminal, "editor": s.Editor},
 	})
 }
@@ -290,6 +364,53 @@ func (d *grove) handleLaunch(w http.ResponseWriter, r *http.Request) {
 // dialog to offer. In a browser there is nothing to open, and the settings
 // window says so rather than showing a button that does nothing.
 var pickFolder func()
+
+// pickApp is set by the desktop front door for the same reason pickFolder is.
+// It hands back the chosen bundle so the settings can store it.
+var pickApp func(kind string) (name, path string, ok bool)
+
+// handleChooseProgram opens the application picker, so the choice is not
+// limited to the programs this file has heard of. Every .app on the disk is
+// reachable; grove uses what it knows about the ones it recognises and opens
+// the rest plainly.
+func (d *grove) handleChooseProgram(w http.ResponseWriter, r *http.Request) {
+	var req struct{ Kind string }
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	switch req.Kind {
+	case "browser", "terminal", "editor":
+	default:
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("nothing opens a %q", req.Kind))
+		return
+	}
+	if pickApp == nil {
+		writeErr(w, http.StatusNotImplemented,
+			fmt.Errorf("only the app has a file dialog — in a browser, choose from the list"))
+		return
+	}
+	name, path, ok := pickApp(req.Kind)
+	if !ok {
+		writeJSON(w, http.StatusOK, map[string]any{"cancelled": true})
+		return
+	}
+	s := loadSettings()
+	id := "path:" + path
+	switch req.Kind {
+	case "browser":
+		s.Browser = id
+	case "terminal":
+		s.Terminal = id
+	case "editor":
+		s.Editor = id
+	}
+	if err := s.save(); err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "name": name, "path": path})
+}
 
 // handleChooseFolder asks the window to put the folder dialog up. It answers
 // straight away: the dialog is somebody else's to close.

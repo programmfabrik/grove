@@ -94,8 +94,9 @@ function SettingsBody() {
 
           <h3 className="set-h">Programs</h3>
           <p className="set-what dim set-lead">
-            grove does not bring its own. These are the ones on this machine; the one you choose is
-            the one it hands a link, a directory or a file to.
+            grove does not bring its own. These are the ones it found here; anything it did not
+            recognise is one <b>Choose an application…</b> away, because no list of programs is ever
+            complete.
           </p>
           <Pick
             label="Browser"
@@ -104,6 +105,7 @@ function SettingsBody() {
             programs={programs}
             value={prefs?.browser ?? ''}
             onPick={(id) => put({ browser: id })}
+            onBrowse={() => api.chooseProgram('browser').then((r) => !r.cancelled && load())}
           />
           <Pick
             label="Terminal"
@@ -112,6 +114,7 @@ function SettingsBody() {
             programs={programs}
             value={prefs?.terminal ?? ''}
             onPick={(id) => put({ terminal: id })}
+            onBrowse={() => api.chooseProgram('terminal').then((r) => !r.cancelled && load())}
           />
           <Pick
             label="Editor"
@@ -120,6 +123,7 @@ function SettingsBody() {
             programs={programs}
             value={prefs?.editor ?? ''}
             onPick={(id) => put({ editor: id })}
+            onBrowse={() => api.chooseProgram('editor').then((r) => !r.cancelled && load())}
           />
 
           <h3 className="set-h">GitHub checks</h3>
@@ -295,6 +299,7 @@ function Pick({
   programs,
   value,
   onPick,
+  onBrowse,
 }: {
   label: string
   hint: string
@@ -302,6 +307,7 @@ function Pick({
   programs: Program[]
   value: string
   onPick: (id: string) => void
+  onBrowse: () => void
 }) {
   const mine = programs.filter((p) => p.kind === kind)
   const chosen = mine.find((p) => p.id === value)
@@ -319,13 +325,18 @@ function Pick({
           </p>
         )}
       </div>
-      <select className="set-select" value={value} onChange={(e) => onPick(e.target.value)}>
+      <select
+        className="set-select"
+        value={value}
+        onChange={(e) => (e.target.value === '\u0000browse' ? onBrowse() : onPick(e.target.value))}
+      >
         <option value="">System default</option>
         {mine.map((p) => (
           <option key={p.id} value={p.id}>
             {p.name}
           </option>
         ))}
+        <option value={'\u0000browse'}>Choose an application…</option>
       </select>
     </div>
   )

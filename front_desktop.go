@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -72,6 +73,7 @@ func run(d *grove, addr string, explicit, _ bool) error {
 	// the settings window has a Choose… button, and only this front door has a
 	// dialog to put behind it
 	pickFolder = func() { chooseFolder(app, d, win, url) }
+	pickApp = func(kind string) (string, string, bool) { return chooseApp(app, kind) }
 
 	// Nothing to show means a first run, or a remembered directory that has
 	// since gone. Either way an empty window explains nothing, so ask — once
@@ -197,6 +199,24 @@ func openSettings(app *application.App, url string) {
 		DisableResize: false,
 		URL:           url + "?view=settings",
 	})
+}
+
+// chooseApp lets somebody point at any application on the disk, which is the
+// only honest answer to "the list should be what I actually have": no
+// catalogue is ever complete, and a bundle nobody guessed still opens.
+func chooseApp(app *application.App, kind string) (string, string, bool) {
+	path, err := app.Dialog.OpenFile().
+		CanChooseDirectories(false).
+		CanChooseFiles(true).
+		TreatsFilePackagesAsDirectories(false). // an .app is picked, not opened
+		SetTitle("Choose a "+kind).
+		SetDirectory("/Applications").
+		AddFilter("Applications", "*.app").
+		PromptForSingleSelection()
+	if err != nil || path == "" {
+		return "", "", false
+	}
+	return strings.TrimSuffix(filepath.Base(path), ".app"), path, true
 }
 
 // chooseFolder is what makes the window an application rather than a page:

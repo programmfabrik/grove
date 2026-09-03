@@ -104,6 +104,13 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title, body }),
     }).then((r) => j<unknown>(r)),
+  // point at any application on the disk, since no catalogue is complete
+  chooseProgram: (kind: string): Promise<{ id?: string; name?: string; cancelled?: boolean }> =>
+    fetch('api/programs/choose', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind }),
+    }).then((r) => j<{ id?: string; name?: string; cancelled?: boolean }>(r)),
   chooseFolder: (): Promise<{ asked: boolean }> =>
     fetch('api/folder/choose', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(
       (r) => j<{ asked: boolean }>(r),

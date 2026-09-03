@@ -634,6 +634,15 @@ grove does not bring its own: somebody who reads diffs all day already has an
 editor they mean, and a dashboard that opened a different one would be wrong in
 a way no setting could excuse.
 
+The list is what it found here, and **Choose an application…** reaches
+everything else, because no list of programs is ever complete. Detecting them
+from what a bundle declares was tried and abandoned: VS Code and Cursor declare
+only `public.folder`, Sublime declares nothing at all, and half a dozen things
+that are not browsers declare `http` — so the declaration would have lost the
+editors people actually use while offering VLC as a browser. A bundle grove
+recognises is opened the way it knows how even when it was pointed at by hand,
+so choosing VS Code through the dialog still opens the line.
+
 Editors are run through the command line tool inside their bundle rather than
 through the app, because that is the difference between "open this file" and
 "open this file at line 412". None of VS Code, Cursor, Zed or Sublime puts that
