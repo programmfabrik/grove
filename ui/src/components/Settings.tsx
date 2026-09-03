@@ -63,7 +63,22 @@ function SettingsBody() {
     const put = (patch: Prefs) => {
     const next = { ...(prefs ?? {}), ...patch }
     setPrefs(next)
-    api.setPrefs(next).then(() => load()).catch((e) => setErr(String(e.message || e)))
+    api
+      .setPrefs(next)
+      .then(() => {
+        load()
+        // the dashboard is a different window on the same origin, and a
+        // setting it acts on has just changed. localStorage is how one window
+        // tells the other; the value is only a nudge, the prefs come from the
+        // server as they always did.
+        try {
+          localStorage.setItem('grove_prefs_rev', String(Date.now()))
+        } catch {
+          // a browser with storage switched off: the dashboard picks it up on
+          // its next poll instead
+        }
+      })
+      .catch((e) => setErr(String(e.message || e)))
   }
 
   const pickTheme = (t: ThemePref) => {
@@ -115,6 +130,7 @@ function SettingsBody() {
             kind="terminal"
             programs={programs}
             value={prefs?.terminal ?? ''}
+            offable
             onPick={(id) => put({ terminal: id })}
             onBrowse={() => api.chooseProgram('terminal').then((r) => !r.cancelled && load())}
           />
@@ -124,6 +140,7 @@ function SettingsBody() {
             kind="editor"
             programs={programs}
             value={prefs?.editor ?? ''}
+            offable
             onPick={(id) => put({ editor: id })}
             onBrowse={() => api.chooseProgram('editor').then((r) => !r.cancelled && load())}
           />
@@ -306,6 +323,7 @@ function Pick({
   kind,
   programs,
   value,
+  offable,
   onPick,
   onBrowse,
 }: {
@@ -314,16 +332,18 @@ function Pick({
   kind: string
   programs: Program[]
   value: string
+  offable?: boolean
   onPick: (id: string) => void
   onBrowse: () => void
 }) {
   const mine = programs.filter((p) => p.kind === kind)
   const chosen = mine.find((p) => p.id === value)
+  const off = value === 'off'
   return (
     <div className="set-row">
       <div className="set-row-text">
         <div className="set-row-name">{label}</div>
-        <p className="set-what dim">{hint}</p>
+        <p className="set-what dim">{off ? 'The button is hidden.' : hint}</p>
         {chosen && (
           <p className="set-sub dim">
             <span className="mono set-path">{chosen.path}</span>
@@ -345,6 +365,7 @@ function Pick({
           </option>
         ))}
         <option value={'\u0000browse'}>Choose an application…</option>
+        {offable && <option value="off">Off — hide the button</option>}
       </select>
     </div>
   )

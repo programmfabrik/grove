@@ -252,11 +252,24 @@ func (k known) command(p Program, target string, line int) *exec.Cmd {
 	return exec.Command(p.Path, target)
 }
 
+// programOff is the choice that is not a program: no button, nothing opened.
+// A terminal and an editor are offers rather than parts of the dashboard, and
+// somebody who does not want grove reaching for either should be able to say
+// so and have the buttons go away rather than sit there declined.
+const programOff = "off"
+
 // launch opens one thing with the program chosen for its kind, or with
 // whatever the system would have used when nothing is chosen.
 func launch(kind, target string, line int) error {
 	s := loadSettings()
 	id := map[string]string{"browser": s.Browser, "terminal": s.Terminal, "editor": s.Editor}[kind]
+	if id == programOff {
+		article := "a "
+		if strings.ContainsRune("aeiou", rune(kind[0])) {
+			article = "an "
+		}
+		return fmt.Errorf("grove is set not to open %s%s", article, kind)
+	}
 	if k, p, ok := programByID(id); ok {
 		cmd := k.command(p, target, line)
 		if err := cmd.Start(); err != nil {

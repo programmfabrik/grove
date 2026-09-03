@@ -660,7 +660,11 @@ where grove looks — and it says so next to the choice when it can only manage
 the file.
 
 **Terminal** and **Editor** sit in the checkout's head, and right-clicking a
-file in the diff offers to open that file, at the line you were reading.
+file in the diff offers to open that file, at the line you were reading. Both
+are offers rather than parts of the dashboard, so both can be switched **off** —
+and then the button is gone rather than sitting there declined, because a
+control that is only ever refused is clutter with a tooltip. The endpoint
+refuses too, so the two cannot disagree.
 
 Three of the things grove does reach off this machine — asking GitHub about
 your checks, keeping the open checkout's remotes current, and looking for a

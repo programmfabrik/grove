@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
-import type { Checkout, Checks, Repo, State, Update } from './types'
+import type { Checkout, Checks, Prefs, Repo, State, Update } from './types'
 import { RepoList } from './components/RepoList'
 import { WorktreeList } from './components/WorktreeList'
 import { Sidebar } from './components/Sidebar'
@@ -35,6 +35,19 @@ export default function App() {
   const [checks, setChecks] = useState<Record<string, Checks>>({})
   const [showSettings, setShowSettings] = useState(false)
   const [showChecks, setShowChecks] = useState<string | null>(null)
+  // which of the offers are switched on. The settings live in another window,
+  // so a change there arrives through localStorage — the value is only a
+  // nudge; the answer still comes from the server.
+  const [prefs, setPrefs] = useState<Prefs | null>(null)
+  useEffect(() => {
+    const read = () => api.prefs().then(setPrefs).catch(() => {})
+    read()
+    const heard = (e: StorageEvent) => {
+      if (e.key === null || e.key === 'grove_prefs_rev') read()
+    }
+    window.addEventListener('storage', heard)
+    return () => window.removeEventListener('storage', heard)
+  }, [])
   useEffect(() => {
     api.version().then(setUpdate).catch(() => {})
   }, [])
@@ -318,7 +331,14 @@ export default function App() {
 
         <div className="pane pane-grow">
           {current ? (
-            <Sidebar c={current} base={state?.base ?? ''} repo={diffRepo} onDiffSel={setDiffSel} />
+            <Sidebar
+              c={current}
+              base={state?.base ?? ''}
+              repo={diffRepo}
+              terminal={prefs?.terminal !== 'off'}
+              editor={prefs?.editor !== 'off'}
+              onDiffSel={setDiffSel}
+            />
           ) : (
             <div className="empty">select a worktree</div>
           )}

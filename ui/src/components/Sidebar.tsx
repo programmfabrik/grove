@@ -15,11 +15,17 @@ export function Sidebar({
   c,
   base,
   repo,
+  terminal = true,
+  editor = true,
   onDiffSel,
 }: {
   c: Checkout
   base: string
   repo?: string
+  // an offer somebody has turned off is not a disabled button, it is no
+  // button: a control that is only ever declined is clutter with a tooltip
+  terminal?: boolean
+  editor?: boolean
   onDiffSel: (s: { sub?: string; scope?: string; file?: string }) => void
 }) {
   // the tree's context menu and the confirmation in front of a revert live
@@ -53,20 +59,24 @@ export function Sidebar({
         <div className="sb-tools">
           {/* the two verbs grove was missing: you look at a worktree and then
               want to be in it */}
-          <button
-            className="btn-ghost"
-            title="Open this checkout in your terminal"
-            onClick={() => api.launch({ kind: 'terminal', name: c.name }).catch(() => {})}
-          >
-            Terminal
-          </button>
-          <button
-            className="btn-ghost"
-            title="Open this checkout in your editor"
-            onClick={() => api.launch({ kind: 'editor', name: c.name }).catch(() => {})}
-          >
-            Editor
-          </button>
+          {terminal && (
+            <button
+              className="btn-ghost"
+              title="Open this checkout in your terminal"
+              onClick={() => api.launch({ kind: 'terminal', name: c.name }).catch(() => {})}
+            >
+              Terminal
+            </button>
+          )}
+          {editor && (
+            <button
+              className="btn-ghost"
+              title="Open this checkout in your editor"
+              onClick={() => api.launch({ kind: 'editor', name: c.name }).catch(() => {})}
+            >
+              Editor
+            </button>
+          )}
           <RemoteBar name={c.name} onChanged={() => setReverted((n) => n + 1)} />
         </div>
         <div className="sb-facts dim">
@@ -93,10 +103,13 @@ export function Sidebar({
 
       {menu && (
         <ContextMenu
-          onEdit={(f) =>
-            api
-              .launch({ kind: 'editor', name: c.name, repo: menu.repo, file: f.path })
-              .catch(() => {})
+          onEdit={
+            editor
+              ? (f) =>
+                  api
+                    .launch({ kind: 'editor', name: c.name, repo: menu.repo, file: f.path })
+                    .catch(() => {})
+              : undefined
           }
           menu={menu}
           onClose={() => setMenu(null)}
