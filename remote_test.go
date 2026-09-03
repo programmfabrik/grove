@@ -111,6 +111,7 @@ func TestPushableRefusals(t *testing.T) {
 // machine with no global git config cannot supply.
 func identify(t testing.TB, path string) {
 	t.Helper()
+	gitRun(t, path, "config", "core.autocrlf", "false") // see initRepo
 	gitRun(t, path, "config", "user.email", "grove@example.com")
 	gitRun(t, path, "config", "user.name", "grove")
 	gitRun(t, path, "config", "commit.gpgsign", "false")

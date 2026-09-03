@@ -123,6 +123,11 @@ func initRepo(t testing.TB, path string) string {
 	gitRun(t, path, "init", "-q")
 	gitRun(t, path, "symbolic-ref", "HEAD", "refs/heads/main") // predates `init -b`
 	// the machine running this may sign commits or have no identity at all
+	// Git for Windows turns LF into CRLF on checkout by default, so a file
+	// that goes through the index and comes back is not byte-for-byte what
+	// went in. The tests care whether a change survived, not which line ending
+	// the platform prefers, so the fixtures simply do not convert.
+	gitRun(t, path, "config", "core.autocrlf", "false")
 	gitRun(t, path, "config", "user.email", "grove@example.com")
 	gitRun(t, path, "config", "user.name", "grove")
 	gitRun(t, path, "config", "commit.gpgsign", "false")
