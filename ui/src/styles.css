@@ -860,3 +860,22 @@ a { color: var(--accent-ink); }
 }
 .sw-on { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
 .sw-on .sw-knob { transform: translateX(16px); background: var(--accent); }
+
+.set-lead { margin: 0 0 6px; }
+.set-select {
+  flex: none; font: inherit; font-size: 12.5px; padding: 5px 8px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer;
+  max-width: 200px;
+}
+.set-dir-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-recent { display: flex; flex-direction: column; gap: 1px; margin-top: 7px; }
+.set-recent-row {
+  text-align: left; border: none; background: none; cursor: pointer; padding: 3px 6px;
+  border-radius: 5px; font-size: 11.5px; color: var(--dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.set-recent-row:hover { background: var(--hover); color: var(--text); }
+
+/* the head's actions: two verbs and the remote bar, on one line */
+.sb-tools { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.ctx-sep { height: 1px; background: var(--border); margin: 4px 0; }

@@ -118,6 +118,16 @@ func main() {
 	}
 }
 
+// refreshEvery is how stale a scan may be before the next read redoes it. The
+// setting wins when there is one, so changing it takes effect on the next
+// request rather than the next launch.
+func (d *grove) refreshEvery() time.Duration {
+	if n := loadSettings().RefreshSeconds; n > 0 {
+		return time.Duration(n) * time.Second
+	}
+	return d.opt.refresh
+}
+
 // dir is the directory the repo list is scanned in. Behind the lock because
 // the desktop front door can point the dashboard somewhere else while it runs.
 func (d *grove) dir() string {
@@ -136,10 +146,21 @@ func (d *grove) setDir(dir string) error {
 		return fmt.Errorf("no git repository in %s", dir)
 	}
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	d.opt.dir = dir
 	d.repos, d.reposAt = repos, time.Now()
 	d.state = map[string]*repoState{}
+	d.mu.Unlock()
+
+	// newest first, no duplicates, and a handful is a list rather than a log
+	s := loadSettings()
+	recent := []string{dir}
+	for _, r := range s.Recent {
+		if r != dir && len(recent) < 8 {
+			recent = append(recent, r)
+		}
+	}
+	s.Dir, s.Recent = dir, recent
+	s.save()
 	return nil
 }
 
@@ -171,6 +192,13 @@ func (d *grove) routes(loopbackOnly bool) http.Handler {
 	mux.HandleFunc("POST /api/open", handleOpen)
 	mux.HandleFunc("GET /api/settings", d.handleSettings)
 	mux.HandleFunc("POST /api/settings", d.handleSettings)
+	mux.HandleFunc("GET /api/programs", d.handlePrograms)
+	mux.HandleFunc("POST /api/launch", d.handleLaunch)
+	mux.HandleFunc("POST /api/notify", d.handleNotify)
+	mux.HandleFunc("POST /api/folder/choose", d.handleChooseFolder)
+	mux.HandleFunc("POST /api/folder/use", d.handleUseFolder)
+	mux.HandleFunc("GET /api/loginitem", d.handleLoginItem)
+	mux.HandleFunc("POST /api/loginitem", d.handleLoginItem)
 	mux.HandleFunc("POST /api/refresh", d.handleRefresh)
 	mux.HandleFunc("POST /api/revert", d.handleRevert)
 	mux.Handle("/", uiHandler())
@@ -193,7 +221,7 @@ type State struct {
 // reposList serves the repo list, rescanning it when it has gone stale.
 func (d *grove) reposList(ctx context.Context) []Repo {
 	d.mu.RLock()
-	fresh := time.Since(d.reposAt) < d.opt.refresh && d.repos != nil
+	fresh := time.Since(d.reposAt) < d.refreshEvery() && d.repos != nil
 	repos := d.repos
 	d.mu.RUnlock()
 	if fresh {
@@ -227,7 +255,7 @@ func (d *grove) repoStateFor(ctx context.Context, repo string) *repoState {
 	}
 	d.mu.Unlock()
 
-	if time.Since(st.gitAt) >= d.opt.refresh {
+	if time.Since(st.gitAt) >= d.refreshEvery() {
 		d.refreshGit(ctx, repo, st)
 	}
 	return st
@@ -276,7 +304,11 @@ func handleOpen(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, fmt.Errorf("only https links are opened"))
 		return
 	}
-	go openBrowser(u.String())
+	// the browser somebody chose, or the one this machine would have used
+	if err := launch("browser", u.String(), 0); err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"opened": u.String()})
 }
 
@@ -364,6 +396,15 @@ func stamp(t time.Time) string {
 		return ""
 	}
 	return t.UTC().Format(time.RFC3339)
+}
+
+// readJSON decodes a request body, with the one size limit every endpoint
+// that takes one wants.
+func readJSON(r *http.Request, v any) error {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(v); err != nil {
+		return fmt.Errorf("bad request body: %w", err)
+	}
+	return nil
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

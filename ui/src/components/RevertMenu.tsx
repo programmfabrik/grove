@@ -29,10 +29,12 @@ export function discardable(files: DiffFile[]): DiffFile[] {
 export function ContextMenu({
   menu,
   onPick,
+  onEdit,
   onClose,
 }: {
   menu: MenuState
   onPick: (p: PendingRevert) => void
+  onEdit?: (f: DiffFile) => void
   onClose: () => void
 }) {
   useEffect(() => {
@@ -67,6 +69,18 @@ export function ContextMenu({
       onContextMenu={(e) => e.preventDefault()}
     >
       <div className="ctx-head">{menu.files.length === 1 ? menu.files[0].path.split('/').pop() : n(menu.files)}</div>
+      {/* the verb grove was missing: you read a change and then want to be in
+          the file. One file at a time, since an editor opening sixty is not a
+          thing anybody meant to ask for. */}
+      <button
+        className="ctx-item"
+        disabled={menu.files.length !== 1 || !onEdit}
+        onClick={() => onEdit?.(menu.files[0])}
+      >
+        Open in editor
+        {menu.files.length > 1 && <span className="dim"> · one at a time</span>}
+      </button>
+      <div className="ctx-sep" />
       <button
         className="ctx-item"
         disabled={!toUnstage.length}

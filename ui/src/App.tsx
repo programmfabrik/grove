@@ -140,6 +140,9 @@ export default function App() {
     }
   }
 
+  // what each checkout's checks were last time, so a run that FINISHES can be
+  // told from one that was already finished when grove started looking
+  const wasChecking = useRef<Record<string, string>>({})
   useEffect(() => {
     if (!repo) return
     let stop = false
@@ -147,7 +150,23 @@ export default function App() {
       api
         .checks(repo)
         .then((r) => {
-          if (!stop) setChecks(r.checks || {})
+          if (stop) return
+          const now = r.checks || {}
+          for (const [name, c] of Object.entries(now)) {
+            const before = wasChecking.current[name]
+            // only the transition, and only once: a green branch says green on
+            // its own, and being told about it every thirty seconds is not news
+            if (before === 'pending' && (c.state === 'success' || c.state === 'failure')) {
+              api
+                .notify(
+                  `${name}: checks ${c.state === 'success' ? 'passed' : 'failed'}`,
+                  `${c.total} check${c.total === 1 ? '' : 's'} on ${c.sha?.slice(0, 8) ?? 'the pushed commit'}`,
+                )
+                .catch(() => {})
+            }
+            wasChecking.current[name] = c.state
+          }
+          setChecks(now)
         })
         .catch(() => {})
     ask()

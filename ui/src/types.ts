@@ -164,6 +164,7 @@ export type Diagnostics = {
   platform: string
   dir: string
   tools: Tool[]
+  refresh_seconds: number
   github: {
     tool: Tool
     from?: string
@@ -178,7 +179,16 @@ export type Diagnostics = {
 // that has never been written means everything on. See settings.go.
 export type Prefs = {
   dir?: string
+  browser?: string
+  terminal?: string
+  editor?: string
   no_checks?: boolean
   no_auto_fetch?: boolean
   no_update_check?: boolean
+  no_notify?: boolean
+  refresh_seconds?: number
+  recent?: string[]
 }
+
+// A program on this machine grove can hand something to. See programs.go.
+export type Program = { id: string; name: string; kind: string; how: string; path: string; line: boolean }

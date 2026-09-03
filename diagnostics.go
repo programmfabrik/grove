@@ -28,10 +28,11 @@ type Tool struct {
 }
 
 type Diagnostics struct {
-	Version  string `json:"version"`
-	Platform string `json:"platform"`
-	Dir      string `json:"dir"`
-	Tools    []Tool `json:"tools"`
+	Version        string `json:"version"`
+	Platform       string `json:"platform"`
+	Dir            string `json:"dir"`
+	RefreshSeconds int    `json:"refresh_seconds"`
+	Tools          []Tool `json:"tools"`
 
 	// GitHub is the one question "is gh installed" and "do the checks work"
 	// were each answering half of.
@@ -50,6 +51,7 @@ func (d *grove) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	dg.Version = version
 	dg.Platform = runtime.GOOS + "/" + runtime.GOARCH
 	dg.Dir = d.dir()
+	dg.RefreshSeconds = int(d.refreshEvery().Seconds())
 
 	git := Tool{
 		Name:     "git",

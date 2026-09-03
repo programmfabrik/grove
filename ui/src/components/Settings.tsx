@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
-import type { Diagnostics, Prefs } from '../types'
+import type { Diagnostics, Prefs, Program } from '../types'
 import { getThemePref, setThemePref, type ThemePref } from '../lib/theme'
 
 // What grove is doing, and the parts of it you can turn off.
@@ -43,24 +43,25 @@ export function Settings({ onClose }: { onClose: () => void }) {
 function SettingsBody() {
   const [d, setD] = useState<Diagnostics | null>(null)
   const [prefs, setPrefs] = useState<Prefs | null>(null)
+  const [programs, setPrograms] = useState<Program[]>([])
+  const [login, setLogin] = useState<{ on: boolean; possible: boolean } | null>(null)
   const [theme, setThemeState] = useState<ThemePref>(getThemePref)
   const [err, setErr] = useState('')
 
   const load = useCallback(() => {
     api.diagnostics().then(setD).catch((e) => setErr(String(e.message || e)))
     api.prefs().then(setPrefs).catch(() => {})
+    api.programs().then((r) => setPrograms(r.programs)).catch(() => {})
+    api.loginItem().then(setLogin).catch(() => setLogin(null))
   }, [])
   useEffect(load, [load])
 
   // `on` is what it IS, so the new stored negative is exactly that: on now
   // means off next, which means the no_ flag becomes true.
-  const flip = (key: keyof Prefs, on: boolean) => {
-    const next = { ...(prefs ?? {}), [key]: on }
+    const put = (patch: Prefs) => {
+    const next = { ...(prefs ?? {}), ...patch }
     setPrefs(next)
-    api
-      .setPrefs(next)
-      .then(() => load()) // the diagnostics change with them
-      .catch((e) => setErr(String(e.message || e)))
+    api.setPrefs(next).then(() => load()).catch((e) => setErr(String(e.message || e)))
   }
 
   const pickTheme = (t: ThemePref) => {
@@ -90,6 +91,36 @@ function SettingsBody() {
               ))}
             </div>
           </div>
+
+          <h3 className="set-h">Programs</h3>
+          <p className="set-what dim set-lead">
+            grove does not bring its own. These are the ones on this machine; the one you choose is
+            the one it hands a link, a directory or a file to.
+          </p>
+          <Pick
+            label="Browser"
+            hint="Where a link to GitHub opens."
+            kind="browser"
+            programs={programs}
+            value={prefs?.browser ?? ''}
+            onPick={(id) => put({ browser: id })}
+          />
+          <Pick
+            label="Terminal"
+            hint="Opened at the checkout, from the button in its head."
+            kind="terminal"
+            programs={programs}
+            value={prefs?.terminal ?? ''}
+            onPick={(id) => put({ terminal: id })}
+          />
+          <Pick
+            label="Editor"
+            hint="Right-click a file in the diff to open it — at the line you were reading, where the editor can be told one."
+            kind="editor"
+            programs={programs}
+            value={prefs?.editor ?? ''}
+            onPick={(id) => put({ editor: id })}
+          />
 
           <h3 className="set-h">GitHub checks</h3>
           <div className="set-row">
@@ -128,7 +159,7 @@ function SettingsBody() {
                 )}
               </p>
             </div>
-            <Switch on={!prefs?.no_checks} onFlip={(on) => flip('no_checks', on)} />
+            <Switch on={!prefs?.no_checks} onFlip={(on) => put({ no_checks: on })} />
           </div>
 
           <h3 className="set-h">While a checkout is open</h3>
@@ -141,7 +172,42 @@ function SettingsBody() {
                 fetches before it decides.
               </p>
             </div>
-            <Switch on={!prefs?.no_auto_fetch} onFlip={(on) => flip('no_auto_fetch', on)} />
+            <Switch on={!prefs?.no_auto_fetch} onFlip={(on) => put({ no_auto_fetch: on })} />
+          </div>
+
+          <div className="set-row">
+            <div className="set-row-text">
+              <div className="set-row-name">Re-scan every</div>
+              <p className="set-what dim">
+                How stale a repository's worktrees may be before the next look at them redoes the
+                scan. Each one costs a handful of git calls, which is why this is not a second.
+              </p>
+            </div>
+            <select
+              className="set-select"
+              value={String(prefs?.refresh_seconds ?? 0)}
+              onChange={(e) => put({ refresh_seconds: Number(e.target.value) })}
+            >
+              <option value="0">as started ({d.refresh_seconds}s)</option>
+              <option value="5">5 seconds</option>
+              <option value="10">10 seconds</option>
+              <option value="20">20 seconds</option>
+              <option value="60">1 minute</option>
+              <option value="300">5 minutes</option>
+            </select>
+          </div>
+
+          <h3 className="set-h">Telling you things</h3>
+          <div className="set-row">
+            <div className="set-row-text">
+              <div className="set-row-name">Say when checks finish</div>
+              <p className="set-what dim">
+                A notification when a run that was going turns green or red, so an hour of checks is
+                not an hour of looking at the column. Once per run, and nothing else is ever
+                announced.
+              </p>
+            </div>
+            <Switch on={!prefs?.no_notify} onFlip={(on) => put({ no_notify: on })} />
           </div>
 
           <h3 className="set-h">Updates</h3>
@@ -153,7 +219,52 @@ function SettingsBody() {
                 nothing is installed — the answer is a link.
               </p>
             </div>
-            <Switch on={!prefs?.no_update_check} onFlip={(on) => flip('no_update_check', on)} />
+            <Switch on={!prefs?.no_update_check} onFlip={(on) => put({ no_update_check: on })} />
+          </div>
+
+          {login?.possible && (
+            <div className="set-row">
+              <div className="set-row-text">
+                <div className="set-row-name">Start Grove at login</div>
+                <p className="set-what dim">
+                  Writes a LaunchAgent in your own Library. Switching this off deletes it again —
+                  nothing is left behind in the login sequence.
+                </p>
+              </div>
+              <Switch
+                on={!!login.on}
+                onFlip={(on) =>
+                  api
+                    .setLoginItem(!on)
+                    .then((r) => setLogin({ on: r.on, possible: true }))
+                    .catch((e) => setErr(String(e.message || e)))
+                }
+              />
+            </div>
+          )}
+
+          <h3 className="set-h">Where grove is looking</h3>
+          <div className="set-row">
+            <div className="set-row-text">
+              <div className="set-row-name mono set-dir-name">{d.dir}</div>
+              {!!prefs?.recent?.length && (
+                <div className="set-recent">
+                  {prefs.recent
+                    .filter((r) => r !== d.dir)
+                    .map((r) => (
+                      <button key={r} className="set-recent-row mono" onClick={() => api.useFolder(r).then(load)}>
+                        {r}
+                      </button>
+                    ))}
+                </div>
+              )}
+            </div>
+            <button
+              className="btn-ghost"
+              onClick={() => api.chooseFolder().catch((e) => setErr(String(e.message || e)))}
+            >
+              Choose…
+            </button>
           </div>
 
           <h3 className="set-h">This grove</h3>
@@ -169,16 +280,54 @@ function SettingsBody() {
               <span className="mono">{d.tools[0]?.version}</span>{' '}
               <span className="mono set-path">{d.tools[0]?.path}</span>
             </div>
-            <div className="set-dir">
-              <span className="dim">watching</span> <span className="mono">{d.dir}</span>
-            </div>
           </div>
-          <p className="set-what dim">
-            File → Open Folder… points grove at a different directory of repositories.
-          </p>
         </>
       )}
     </>
+  )
+}
+
+// One program of a kind, or whatever the machine would do on its own.
+function Pick({
+  label,
+  hint,
+  kind,
+  programs,
+  value,
+  onPick,
+}: {
+  label: string
+  hint: string
+  kind: string
+  programs: Program[]
+  value: string
+  onPick: (id: string) => void
+}) {
+  const mine = programs.filter((p) => p.kind === kind)
+  const chosen = mine.find((p) => p.id === value)
+  return (
+    <div className="set-row">
+      <div className="set-row-text">
+        <div className="set-row-name">{label}</div>
+        <p className="set-what dim">{hint}</p>
+        {chosen && (
+          <p className="set-sub dim">
+            <span className="mono set-path">{chosen.path}</span>
+            {kind === 'editor' && !chosen.line && (
+              <span className="set-tag set-tag-warn">opens the file, not the line</span>
+            )}
+          </p>
+        )}
+      </div>
+      <select className="set-select" value={value} onChange={(e) => onPick(e.target.value)}>
+        <option value="">System default</option>
+        {mine.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+    </div>
   )
 }
 

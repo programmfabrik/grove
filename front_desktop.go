@@ -69,6 +69,9 @@ func run(d *grove, addr string, explicit, _ bool) error {
 		URL:       url,
 	})
 	app.Menu.SetApplicationMenu(desktopMenu(app, d, win, url))
+	// the settings window has a Choose… button, and only this front door has a
+	// dialog to put behind it
+	pickFolder = func() { chooseFolder(app, d, win, url) }
 
 	// Nothing to show means a first run, or a remembered directory that has
 	// since gone. Either way an empty window explains nothing, so ask — once

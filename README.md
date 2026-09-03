@@ -628,6 +628,22 @@ pretending otherwise would mean two settings screens to keep in step; what is
 the operating system's is the window, the menu item and the shortcut, which is
 what "where do I find settings" is actually asking about.
 
+**The programs grove hands things to** — a browser for a link, a terminal for a
+checkout, an editor for a file — are chosen here from the ones on this machine.
+grove does not bring its own: somebody who reads diffs all day already has an
+editor they mean, and a dashboard that opened a different one would be wrong in
+a way no setting could excuse.
+
+Editors are run through the command line tool inside their bundle rather than
+through the app, because that is the difference between "open this file" and
+"open this file at line 412". None of VS Code, Cursor, Zed or Sublime puts that
+tool on the PATH by default and all four ship it inside the `.app`, so that is
+where grove looks — and it says so next to the choice when it can only manage
+the file.
+
+**Terminal** and **Editor** sit in the checkout's head, and right-clicking a
+file in the diff offers to open that file, at the line you were reading.
+
 Three of the things grove does reach off this machine — asking GitHub about
 your checks, keeping the open checkout's remotes current, and looking for a
 newer grove — and each is a switch here. A tool that quietly talks to the
@@ -751,6 +767,9 @@ cd ui && npm run dev
 | `remote.go` | `/api/remote` — where each repository stands with its remote, and push, fetch, rebase, merge |
 | `job.go` | `/api/run` — a push or a pull as a transcript the page can watch while it runs |
 | `checks.go` | `/api/checks` — whether GitHub is testing what each checkout pushed |
+| `programs.go` | the browser, terminal and editor on this machine, and opening things with them |
+| `notify.go` | a word when checks you were waiting for finish |
+| `loginitem.go` | starting with the machine, which is a LaunchAgent and nothing more |
 | `diagnostics.go` | `/api/diagnostics` — what grove is standing on, and what it is missing |
 | `paths.go` | the one spelling a path is kept in — see below |
 | `front_cli.go` | the default front door: serve it and say where it is |

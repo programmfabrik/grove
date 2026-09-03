@@ -1,4 +1,4 @@
-import type { Checks, DiffFile, Diagnostics, JobState, Prefs, RemoteResult, RemoteState, Repo, ScopeRepo, State, Update } from './types'
+import type { Checks, DiffFile, Diagnostics, JobState, Prefs, Program, RemoteResult, RemoteState, Repo, ScopeRepo, State, Update } from './types'
 
 async function j<T>(r: Response): Promise<T> {
   if (!r.ok) {
@@ -83,6 +83,45 @@ export const api = {
     ),
   diagnostics: (): Promise<Diagnostics> => fetch('api/diagnostics').then((r) => j<Diagnostics>(r)),
   prefs: (): Promise<Prefs> => fetch('api/settings').then((r) => j<Prefs>(r)),
+  programs: (): Promise<{ programs: Program[]; chosen: Record<string, string> }> =>
+    fetch('api/programs').then((r) => j<{ programs: Program[]; chosen: Record<string, string> }>(r)),
+  // open a checkout in a terminal, or a file in an editor, at a line
+  launch: (body: {
+    kind: 'terminal' | 'editor'
+    name: string
+    repo?: string
+    file?: string
+    line?: number
+  }): Promise<{ opened: string }> =>
+    fetch('api/launch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then((r) => j<{ opened: string }>(r)),
+  notify: (title: string, body: string): Promise<unknown> =>
+    fetch('api/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, body }),
+    }).then((r) => j<unknown>(r)),
+  chooseFolder: (): Promise<{ asked: boolean }> =>
+    fetch('api/folder/choose', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(
+      (r) => j<{ asked: boolean }>(r),
+    ),
+  useFolder: (dir: string): Promise<{ dir: string }> =>
+    fetch('api/folder/use', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dir }),
+    }).then((r) => j<{ dir: string }>(r)),
+  loginItem: (): Promise<{ on: boolean; possible: boolean }> =>
+    fetch('api/loginitem').then((r) => j<{ on: boolean; possible: boolean }>(r)),
+  setLoginItem: (on: boolean): Promise<{ on: boolean }> =>
+    fetch('api/loginitem', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ on }),
+    }).then((r) => j<{ on: boolean }>(r)),
   setPrefs: (p: Prefs): Promise<Prefs> =>
     fetch('api/settings', {
       method: 'POST',

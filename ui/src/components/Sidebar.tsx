@@ -50,7 +50,25 @@ export function Sidebar({
             <span className={c.dirty ? 'on dirty' : ''}>{c.dirty} uncommitted</span>
           </div>
         </div>
-        <RemoteBar name={c.name} onChanged={() => setReverted((n) => n + 1)} />
+        <div className="sb-tools">
+          {/* the two verbs grove was missing: you look at a worktree and then
+              want to be in it */}
+          <button
+            className="btn-ghost"
+            title="Open this checkout in your terminal"
+            onClick={() => api.launch({ kind: 'terminal', name: c.name }).catch(() => {})}
+          >
+            Terminal
+          </button>
+          <button
+            className="btn-ghost"
+            title="Open this checkout in your editor"
+            onClick={() => api.launch({ kind: 'editor', name: c.name }).catch(() => {})}
+          >
+            Editor
+          </button>
+          <RemoteBar name={c.name} onChanged={() => setReverted((n) => n + 1)} />
+        </div>
         <div className="sb-facts dim">
           <Copy text={c.path} title="Copy path">
             <span className="mono">{c.path}</span>
@@ -75,6 +93,11 @@ export function Sidebar({
 
       {menu && (
         <ContextMenu
+          onEdit={(f) =>
+            api
+              .launch({ kind: 'editor', name: c.name, repo: menu.repo, file: f.path })
+              .catch(() => {})
+          }
           menu={menu}
           onClose={() => setMenu(null)}
           onPick={(p) => {

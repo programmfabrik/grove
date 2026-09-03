@@ -27,9 +27,26 @@ type settings struct {
 	// somebody may reasonably not want. Stored as negatives so that the zero
 	// value — a settings file that has never been written — means everything
 	// on, which is what a first run should be.
+	// Which program to hand a link, a directory or a file to. Empty means
+	// whatever this machine would do on its own.
+	Browser  string `json:"browser,omitempty"`
+	Terminal string `json:"terminal,omitempty"`
+	Editor   string `json:"editor,omitempty"`
+
 	NoChecks      bool `json:"no_checks,omitempty"`
 	NoAutoFetch   bool `json:"no_auto_fetch,omitempty"`
 	NoUpdateCheck bool `json:"no_update_check,omitempty"`
+	NoNotify      bool `json:"no_notify,omitempty"`
+
+	// RefreshSeconds is how often a repository's worktrees are re-scanned.
+	// Zero means whatever -refresh said, which is what it always was.
+	RefreshSeconds int `json:"refresh_seconds,omitempty"`
+	// Recent is the directories grove has been pointed at, newest first, so
+	// going back to one is a click rather than a folder dialog.
+	Recent []string `json:"recent,omitempty"`
+
+	// LoginItem is not stored here — it IS the LaunchAgent file, and one
+	// truth beats two that can disagree. See loginitem.go.
 }
 
 // settingsPath is the OS's own place for it: Application Support on macOS,
@@ -134,9 +151,9 @@ func (d *grove) handleSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cur := loadSettings()
-	// Dir is not settable from here: it is chosen with the folder picker, so
-	// that what grove watches is always somewhere somebody actually pointed at
-	in.Dir = cur.Dir
+	// Dir and Recent are not settable from here: what grove watches is always
+	// somewhere somebody actually pointed at, through the folder picker
+	in.Dir, in.Recent = cur.Dir, cur.Recent
 	if err := in.save(); err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
