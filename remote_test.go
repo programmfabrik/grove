@@ -432,7 +432,12 @@ func TestASubmoduleAtAnotherCommitStopsTheRebaseAndSaysWhy(t *testing.T) {
 	sub := initRepo(t, filepath.Join(dir, "sub"))
 	gitRun(t, sub, "remote", "add", "origin", subRemote)
 	gitRun(t, sub, "push", "-q", "-u", "origin", "main")
-	// a second commit the submodule can be moved back to
+	// the commit the submodule will be moved back to, named outright: HEAD~1
+	// is one more thing that can resolve differently somewhere else
+	first, err := git(sub, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
 	write(t, sub, "two.txt", "two\n")
 	gitRun(t, sub, "add", "two.txt")
 	gitRun(t, sub, "commit", "-q", "-m", "second")
@@ -457,7 +462,12 @@ func TestASubmoduleAtAnotherCommitStopsTheRebaseAndSaysWhy(t *testing.T) {
 	gitRun(t, top, "fetch", "-q", "origin")
 
 	// and the submodule is moved back one, without committing the parent
-	gitRun(t, subIn, "checkout", "-q", "HEAD~1")
+	if out, err := gitSays(subIn, "log", "--oneline"); err != nil || !strings.Contains(out, "second") {
+		t.Fatalf("the submodule clone is not where the fixture expects: %q (%v)", out, err)
+	}
+	if out, err := gitSays(subIn, "checkout", "-q", first); err != nil {
+		t.Fatalf("could not move the submodule to %s: %v\n%s", first, err, out)
+	}
 
 	if out, _ := git(top, "status", "--porcelain"); !strings.Contains(out, "vendor/sub") {
 		t.Fatalf("the fixture is not in the state under test: %q", out)
