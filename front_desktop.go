@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"runtime"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -101,7 +102,28 @@ func listenDesktop(addr string, explicit bool) (net.Listener, error) {
 
 func desktopMenu(app *application.App, d *grove, win application.Window, url string) *application.Menu {
 	menu := application.NewMenu()
-	menu.AddRole(application.AppMenu)
+
+	// The application menu is built by hand rather than taken from AppMenu,
+	// for one item: Settings belongs under the application's own name with
+	// cmd-comma on it, which is where every Mac user looks for it and where
+	// no amount of buttons in a web toolbar will make them look instead.
+	// Wails has no role for it, so the rest of the menu is reproduced around it.
+	if runtime.GOOS == "darwin" {
+		appMenu := menu.AddSubmenu("Grove")
+		appMenu.AddRole(application.About)
+		appMenu.AddSeparator()
+		appMenu.Add("Settings…").SetAccelerator("cmd+,").OnClick(func(*application.Context) {
+			openSettings(app, url)
+		})
+		appMenu.AddSeparator()
+		appMenu.AddRole(application.ServicesMenu)
+		appMenu.AddSeparator()
+		appMenu.AddRole(application.Hide)
+		appMenu.AddRole(application.HideOthers)
+		appMenu.AddRole(application.UnHide)
+		appMenu.AddSeparator()
+		appMenu.AddRole(application.Quit)
+	}
 
 	file := menu.AddSubmenu("File")
 	file.Add("Open Folder…").SetAccelerator("cmdorctrl+o").OnClick(func(*application.Context) {
@@ -114,6 +136,13 @@ func desktopMenu(app *application.App, d *grove, win application.Window, url str
 	file.Add("Reload Window").SetAccelerator("cmdorctrl+shift+r").OnClick(func(*application.Context) {
 		win.Reload()
 	})
+	// everywhere without an application menu, Settings goes here
+	if runtime.GOOS != "darwin" {
+		file.AddSeparator()
+		file.Add("Settings…").SetAccelerator("ctrl+,").OnClick(func(*application.Context) {
+			openSettings(app, url)
+		})
+	}
 
 	menu.AddRole(application.EditMenu) // grove copies shas and paths
 	menu.AddRole(application.ViewMenu)
@@ -141,6 +170,30 @@ func rememberOrRecallDir(d *grove) {
 		return
 	}
 	settings{Dir: d.dir()}.save()
+}
+
+// openSettings shows what grove is standing on, in a window of its own.
+//
+// A settings panel inside the dashboard is a panel; a separate window with the
+// application's name on it, opened by cmd-comma, is where somebody looks for
+// one. The contents are still the page — there is no native form toolkit here
+// and pretending otherwise would mean two settings screens to keep in step —
+// but the window, the menu item and the shortcut are the operating system's.
+func openSettings(app *application.App, url string) {
+	if w, ok := app.Window.GetByName("settings"); ok {
+		w.Show().Focus()
+		return
+	}
+	app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:          "settings",
+		Title:         "Grove Settings",
+		Width:         640,
+		Height:        680,
+		MinWidth:      420,
+		MinHeight:     360,
+		DisableResize: false,
+		URL:           url + "?view=settings",
+	})
 }
 
 // chooseFolder is what makes the window an application rather than a page:

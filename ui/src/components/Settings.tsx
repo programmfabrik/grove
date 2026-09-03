@@ -8,7 +8,37 @@ import type { Diagnostics } from '../types'
 // happen — the check column stays empty, and nobody is told whether that means
 // "nothing is running" or "I could not ask". This says which, for each of
 // them, with what it is for and what goes without it.
+// SettingsPage is the window of its own that cmd-comma opens. The same body,
+// without a dialog around it, because a window that draws its own modal inside
+// itself is a web page wearing a window.
+export function SettingsPage() {
+  return (
+    <div className="set-page">
+      <h1 className="set-page-title">Settings</h1>
+      <SettingsBody />
+    </div>
+  )
+}
+
 export function Settings({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
+        <h2 className="modal-title">Settings</h2>
+        <div className="modal-body">
+          <SettingsBody />
+        </div>
+        <div className="modal-actions">
+          <button className="btn-ghost" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SettingsBody() {
   const [d, setD] = useState<Diagnostics | null>(null)
   const [err, setErr] = useState('')
 
@@ -20,10 +50,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
   }, [])
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-        <h2 className="modal-title">Settings</h2>
-        <div className="modal-body">
+    <>
           {err && <div className="set-bad">{err}</div>}
           {!d && !err && <p className="dim">Looking…</p>}
           {d && (
@@ -73,13 +100,6 @@ export function Settings({ onClose }: { onClose: () => void }) {
               </div>
             </>
           )}
-        </div>
-        <div className="modal-actions">
-          <button className="btn-ghost" onClick={onClose}>
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
+    </>
   )
 }

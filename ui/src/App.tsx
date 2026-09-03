@@ -201,9 +201,13 @@ export default function App() {
 
         <div className="topbar-tools">
           {update?.available && <UpdateNotice update={update} />}
-          <button className="btn-ghost" onClick={() => setShowSettings(true)} title="what grove is standing on">
-            Settings
-          </button>
+          {/* the window has this in its own menu, under cmd-comma, where it
+              belongs; a browser tab has no menu bar to put it in */}
+          {!update?.desktop && (
+            <button className="btn-ghost" onClick={() => setShowSettings(true)} title="what grove is standing on">
+              Settings
+            </button>
+          )}
           <button className="btn-ghost" onClick={refresh} disabled={refreshing}>
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>

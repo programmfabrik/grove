@@ -617,11 +617,24 @@ only calls made are for commits that are already pushed.
 
 ## Settings
 
-What grove is standing on, and what it is missing. grove runs other programs,
-and when one is absent a feature quietly does not happen — the check column
-stays empty and nobody is told whether that means "nothing is running" or "I
-could not ask". Settings says which: every program grove runs, whether it was
-found and at what version, what it is used for, and what goes without it.
+**⌘,** in the app, under Grove in the menu bar — where a Mac user looks for it,
+and where no button in a web toolbar will make them look instead. It opens a
+window of its own rather than a panel inside the dashboard. Elsewhere it is
+under File, on Ctrl-,. In a browser there is no menu bar to put it in, so the
+top bar keeps a button.
+
+The contents are still the page. There is no native form toolkit here, and
+pretending otherwise would mean two settings screens to keep in step; what is
+the operating system's is the window, the menu item and the shortcut, which is
+what "where do I find settings" is actually asking about.
+
+What it says is what grove is standing on, and what it is missing. grove runs
+other programs, and when one is absent a feature quietly does not happen — the
+check column stays empty and nobody is told whether that means "nothing is
+running" or "I could not ask". Settings says which: every program grove runs,
+whether it was found and at what version, what it is used for, and what goes
+without it. The GitHub credential is proved by using it, not assumed from a
+token being present.
 
 ## What the loopback port is, and is not
 
