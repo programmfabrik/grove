@@ -565,3 +565,81 @@ func parentWithMovedSubmodule(t testing.TB) (top, subIn, first string) {
 
 	return top, subIn, first
 }
+
+// Submodules nest, and so does being out of position. easydb-library and
+// coffeescript-ui are declared by easydb-webfrontend, which is declared by
+// fylr, and moving easydb-webfrontend to what fylr records changes what
+// coffeescript-ui is supposed to be — so the outer one has to move first.
+// Parking only the top level left the tree dirty and the rebase refused.
+func TestParkingReachesNestedSubmodules(t *testing.T) {
+	requireGit(t)
+	dir := t.TempDir()
+	remotes := map[string]string{}
+	for _, n := range []string{"leaf", "mid", "top"} {
+		remotes[n] = filepath.Join(dir, n+".git")
+		gitRun(t, dir, "init", "-q", "--bare", "-b", "main", remotes[n])
+	}
+	build := func(name string) string {
+		p := initRepo(t, filepath.Join(dir, name))
+		gitRun(t, p, "remote", "add", "origin", remotes[name])
+		gitRun(t, p, "push", "-q", "-u", "origin", "main")
+		return p
+	}
+	leaf, mid, top := build("leaf"), build("mid"), build("top")
+	// a second commit in the leaf, so it has somewhere else to be
+	write(t, leaf, "two.txt", "two\n")
+	gitRun(t, leaf, "add", "two.txt")
+	gitRun(t, leaf, "commit", "-q", "-m", "leaf second")
+	gitRun(t, leaf, "push", "-q", "origin", "main")
+
+	gitRun(t, mid, "-c", "protocol.file.allow=always", "submodule", "add", "-q", remotes["leaf"], "leaf")
+	gitRun(t, mid, "commit", "-q", "-m", "add leaf")
+	gitRun(t, mid, "push", "-q", "origin", "main")
+	gitRun(t, top, "-c", "protocol.file.allow=always", "submodule", "add", "-q", remotes["mid"], "mid")
+	gitRun(t, top, "commit", "-q", "-m", "add mid")
+	gitRun(t, top, "push", "-q", "-u", "origin", "main")
+	gitRun(t, filepath.Join(top, "mid"), "-c", "protocol.file.allow=always",
+		"submodule", "update", "--init", "-q")
+
+	midIn := filepath.Join(top, "mid")
+	leafIn := filepath.Join(midIn, "leaf")
+	identify(t, midIn)
+	identify(t, leafIn)
+
+	// somebody moves top on, so there is something to rebase onto
+	other := filepath.Join(dir, "other")
+	gitRun(t, dir, "clone", "-q", remotes["top"], other)
+	identify(t, other)
+	write(t, other, "theirs.txt", "theirs\n")
+	gitRun(t, other, "add", "theirs.txt")
+	gitRun(t, other, "commit", "-q", "-m", "theirs")
+	gitRun(t, other, "push", "-q", "origin", "main")
+	gitRun(t, top, "fetch", "-q", "origin")
+
+	// and the NESTED submodule is moved, which makes mid dirty, which makes
+	// top dirty — two levels down from the repository being rebased
+	firstLeaf, err := git(leafIn, "rev-parse", "HEAD~1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, leafIn, "checkout", "--quiet", firstLeaf)
+	if out, _ := git(top, "status", "--porcelain"); !strings.Contains(out, "mid") {
+		t.Fatalf("the fixture is not in the state under test: %q", out)
+	}
+
+	wasMid, _ := git(midIn, "rev-parse", "HEAD")
+	res := doRemote(subRepo{Name: "top", Path: top}, readRemote(top), "rebase", "", nil)
+	if !res.Ok {
+		t.Fatalf("a nested submodule stopped the rebase: %s\n%s\n%s", res.Detail, res.Why, res.Git)
+	}
+	if out, _ := git(top, "rev-list", "--count", "HEAD..@{upstream}"); out != "0" {
+		t.Errorf("still %s behind", out)
+	}
+	// everything put back, at both depths
+	if at, _ := git(leafIn, "rev-parse", "HEAD"); at != firstLeaf {
+		t.Errorf("the nested submodule is at %s, not the %s it was on", at, firstLeaf)
+	}
+	if at, _ := git(midIn, "rev-parse", "HEAD"); at != wasMid {
+		t.Errorf("the middle submodule moved: %s -> %s", wasMid, at)
+	}
+}

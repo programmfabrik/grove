@@ -520,10 +520,19 @@ back on top, and the dialog says as much before you agree to it.
 A stash cannot clean a submodule sitting at a different commit than the parent
 records: git stashes the recorded pointer and leaves the submodule's own
 checkout alone, so the tree stays modified and a rebase will not start. That is
-not a reason to refuse either. The submodule is moved to what the parent
-records (`git submodule update --checkout`), the rebase runs, and it is put
-back exactly where it was — on the branch it was on if it was on one. Nothing
-is lost by the trip: its commits never leave its own object store.
+not a reason to refuse either. The submodules are moved to what their parents
+record, the rebase runs, and each goes back exactly where it was — on the
+branch it was on if it was on one. Nothing is lost by the trip: every commit
+stays in its own repository's object store.
+
+**At every depth, outermost first.** A submodule of a submodule is out of
+position only relative to the commit *its* parent is on, so moving the outer
+one changes what the inner one should be. Moving only the top level is not
+enough and moving bottom-up is wrong: fylr's `easydb-webfrontend` came back at
+the commit fylr records and still reported ` M coffeescript-ui`, because
+nothing had told `coffeescript-ui` where the *new* `easydb-webfrontend` wanted
+it. `git submodule update --checkout --recursive` does it in the right order,
+and the restore afterwards runs outermost-first for the same reason.
 
 The one submodule grove will not move is one holding uncommitted work of its
 own. Moving it would mean overwriting somebody's edits to get a rebase through,

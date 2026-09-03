@@ -170,7 +170,7 @@ func rebaseWithStash(name, root, upstream string, job *Job) RepoResult {
 	// are moved to what the parent records first, and moved back afterwards —
 	// on every way out of this function, including the failures.
 	parked, parkErr := parkSubmodules(root, name, job)
-	defer unparkSubmodules(root, name, job, parked)
+	defer unparkSubmodules(job, parked)
 
 	dirty, _ := git(root, "status", "--porcelain", "-uall")
 	stashed := false
@@ -229,59 +229,84 @@ func rebaseWithStash(name, root, upstream string, job *Job) RepoResult {
 	return RepoResult{Repo: name, Ok: true, Detail: "rebased onto " + upstream + ", your changes back on top"}
 }
 
-// parked is a submodule moved to the commit the parent records, and where it
+// parked is a submodule moved to the commit its parent records, and where it
 // was before — a branch name if it was on one, its commit if it was not.
-type parked struct{ path, was string }
+type parked struct{ name, path, was string }
 
-// parkSubmodules puts every submodule at the commit the parent records, so the
-// parent's tree is clean enough to rebase. Nothing is lost by it: the
-// submodule's own commits stay in its object store and it goes back to exactly
-// where it was afterwards.
+// parkSubmodules puts every submodule, at every depth, at the commit its
+// parent records, so the tree is clean enough to rebase.
 //
-// A submodule with uncommitted work of its own cannot be moved, and git says
-// so rather than overwriting it. That one is left alone and named.
+// Depth matters and so does direction. A submodule of a submodule is only
+// out of place relative to the commit ITS parent is on, so moving the outer
+// one changes what the inner one should be — which means the outer has to move
+// first. That is exactly what --recursive does, and doing it by hand
+// bottom-up gets the wrong answer: fylr's easydb-webfrontend came back at the
+// recorded commit and still reported ` M coffeescript-ui`, because nothing had
+// told coffeescript-ui where the NEW easydb-webfrontend wanted it.
+//
+// Nothing is risked by the trip. Every commit stays in its own repository's
+// object store and everything goes back where it was afterwards, including on
+// the failures.
 func parkSubmodules(root, name string, job *Job) ([]parked, string) {
 	status, err := git(root, "status", "--porcelain")
 	if err != nil || status == "" {
 		return nil, ""
 	}
-	var out []parked
-	var refused []string
+	// only if a submodule is what is dirty; moving them otherwise is work
+	// nobody asked for
+	wanted := false
 	for _, line := range strings.Split(status, "\n") {
 		if len(line) < 4 {
 			continue
 		}
 		rel := strings.TrimSpace(line[2:])
-		path := filepath.Join(root, rel)
-		if _, err := os.Stat(filepath.Join(path, ".git")); err != nil {
-			continue // not a submodule
+		if _, err := os.Stat(filepath.Join(root, rel, ".git")); err == nil {
+			wanted = true
+			break
 		}
-		// where it is now: the branch if it is on one, the commit otherwise
-		was, err := git(path, "symbolic-ref", "--quiet", "--short", "HEAD")
+	}
+	if !wanted {
+		return nil, ""
+	}
+
+	// where everything is now, at every depth, before anything moves
+	var out []parked
+	subs := diffRepos(Checkout{Name: name, Path: root, Repo: name})
+	for _, sub := range subs[1:] { // [0] is the repository itself
+		was, err := git(sub.Path, "symbolic-ref", "--quiet", "--short", "HEAD")
 		if err != nil || was == "" {
-			if was, err = git(path, "rev-parse", "HEAD"); err != nil {
+			if was, err = git(sub.Path, "rev-parse", "HEAD"); err != nil {
 				continue
 			}
 		}
-		if _, err := say(job, name, root, "submodule", "update", "--checkout", "--", rel); err != nil {
-			refused = append(refused, rel)
-			continue
+		rel, err := filepath.Rel(root, sub.Path)
+		if err != nil {
+			rel = sub.Name
 		}
-		out = append(out, parked{rel, was})
+		out = append(out, parked{name + "/" + filepath.ToSlash(rel), sub.Path, was})
 	}
-	if len(refused) > 0 {
-		return out, plural(len(refused), "The submodule ", "The submodules ") +
-			strings.Join(refused, ", ") + plural(len(refused), " has", " have") +
-			" uncommitted work inside, which grove will not move or overwrite."
+	if len(out) == 0 {
+		return nil, ""
+	}
+	if o, err := say(job, name, root, "submodule", "update", "--checkout", "--recursive"); err != nil {
+		return out, "The submodules could not be moved out of the way: " + firstLine(o)
 	}
 	return out, ""
 }
 
-// unparkSubmodules puts them back exactly where they were.
-func unparkSubmodules(root, name string, job *Job, parked []parked) {
+// unparkSubmodules puts them back exactly where they were, outermost first for
+// the same reason they were moved that way.
+func unparkSubmodules(job *Job, parked []parked) {
 	for _, p := range parked {
-		say(job, name+"/"+p.path, filepath.Join(root, p.path), "checkout", "--quiet", p.was)
+		say(job, p.name, p.path, "checkout", "--quiet", p.was)
 	}
+}
+
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
 
 // whyStillDirty explains a tree that neither the stash nor moving the

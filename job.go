@@ -186,6 +186,11 @@ func (d *grove) runRemote(c Checkout, req remoteRequest, job *Job) {
 	after := remoteRepos(c)
 	for _, r := range results {
 		if !r.Ok {
+			// git's own words go in too: a failure nobody can diagnose from
+			// the transcript is a transcript that was not worth keeping
+			if r.Git != "" {
+				job.out(r.Git)
+			}
 			job.add(Line{Kind: "err", Text: r.Repo + ": " + r.Detail})
 			continue
 		}
