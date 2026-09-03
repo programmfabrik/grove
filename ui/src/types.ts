@@ -103,6 +103,7 @@ export type RemoteRepo = {
   detached?: boolean
   upstream?: string
   remote?: string
+  remotes?: string[]
   ahead: number
   behind: number
   dirty: number
@@ -110,7 +111,10 @@ export type RemoteRepo = {
   gitlink_unknown?: boolean
   can_push: boolean
   blocked?: string
+  can_pull: boolean
+  pull_blocked?: string
+  pull_mode?: 'ff' | 'rebase' | ''
   fetched_at?: string
 }
-export type RemoteState = { name: string; repo?: string; auto_fetch?: boolean; repos: RemoteRepo[] }
+export type RemoteState = { name: string; repo?: string; repos: RemoteRepo[] }
 export type RemoteResult = { repo: string; ok: boolean; detail?: string }

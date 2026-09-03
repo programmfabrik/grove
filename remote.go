@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -39,22 +38,28 @@ import (
 // RemoteRepo is one repository's standing with its remote: the checkout
 // itself, or one of the submodules under it.
 type RemoteRepo struct {
-	Name     string `json:"name"`
-	Branch   string `json:"branch,omitempty"`
-	Detached bool   `json:"detached,omitempty"`
-	Upstream string `json:"upstream,omitempty"` // origin/branch, when it has one
-	Remote   string `json:"remote,omitempty"`   // where a first push would go
-	Ahead    int    `json:"ahead"`              // commits the upstream has not
-	Behind   int    `json:"behind"`             // commits it has and we have not
-	Dirty    int    `json:"dirty"`
+	Name     string   `json:"name"`
+	Branch   string   `json:"branch,omitempty"`
+	Detached bool     `json:"detached,omitempty"`
+	Upstream string   `json:"upstream,omitempty"` // origin/branch, when it has one
+	Remote   string   `json:"remote,omitempty"`   // where a push goes by default
+	Remotes  []string `json:"remotes,omitempty"`  // all of them, when there is a choice
+	Ahead    int      `json:"ahead"`              // commits the upstream has not
+	Behind   int      `json:"behind"`             // commits it has and we have not
+	Dirty    int      `json:"dirty"`
 
 	// Gitlink is the commit the PARENT records for this submodule, and
 	// GitlinkUnknown says no remote branch of the submodule contains it.
 	Gitlink        string `json:"gitlink,omitempty"`
 	GitlinkUnknown bool   `json:"gitlink_unknown,omitempty"`
 
-	CanPush   bool   `json:"can_push"`
-	Blocked   string `json:"blocked,omitempty"`    // why not, in one line
+	CanPush bool   `json:"can_push"`
+	Blocked string `json:"blocked,omitempty"` // why not, in one line
+
+	CanPull     bool   `json:"can_pull"`
+	PullBlocked string `json:"pull_blocked,omitempty"`
+	// PullMode is the way in that makes sense here — see pullMode.
+	PullMode  string `json:"pull_mode,omitempty"`
 	FetchedAt string `json:"fetched_at,omitempty"` // when this repo last heard from its remote
 }
 
@@ -63,9 +68,8 @@ type remoteState struct {
 	// Repo is the repository the checkout belongs to — the directory holding
 	// the real .git. Auto-fetch is keyed by it, because a repository's
 	// worktrees share one object store and one fetch serves them all.
-	Repo      string       `json:"repo,omitempty"`
-	AutoFetch bool         `json:"auto_fetch,omitempty"`
-	Repos     []RemoteRepo `json:"repos"`
+	Repo  string       `json:"repo,omitempty"`
+	Repos []RemoteRepo `json:"repos"`
 }
 
 // repoOf is the repository a checkout belongs to.
@@ -90,12 +94,10 @@ func (d *grove) handleRemote(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, fmt.Errorf("no checkout named %q", r.URL.Query().Get("name")))
 		return
 	}
-	repo := repoOf(c.Path)
 	writeJSON(w, http.StatusOK, remoteState{
-		Name:      c.Name,
-		Repo:      repo,
-		AutoFetch: loadSettings().AutoFetch[repo],
-		Repos:     remoteRepos(c),
+		Name:  c.Name,
+		Repo:  repoOf(c.Path),
+		Repos: remoteRepos(c),
 	})
 }
 
@@ -104,30 +106,50 @@ func (d *grove) handleRemote(w http.ResponseWriter, r *http.Request) {
 func remoteRepos(c Checkout) []RemoteRepo {
 	subs := diffRepos(c)
 	out := make([]RemoteRepo, 0, len(subs))
-	var unknown []string
-	for i, s := range subs {
+	byParent := map[string][]string{} // parent path -> submodules it cannot publish
+	for _, s := range subs {
 		rr := readRemote(s.Path)
 		rr.Name = s.Name
-		if i > 0 {
-			// a submodule: what the parent records for it is what a push of
-			// the parent would publish
-			rr.Gitlink, rr.GitlinkUnknown = gitlinkStanding(c.Path, s.Path)
+		if s.Parent != "" {
+			// A submodule: what its parent records for it is what a push of
+			// THAT parent would publish. The parent of a nested submodule is
+			// the submodule above it, not the checkout — using the checkout
+			// for all of them asked fylr for a path only easydb-webfrontend
+			// has, got nothing, and quietly checked nothing.
+			rr.Gitlink, rr.GitlinkUnknown = gitlinkStanding(s.Parent, s.Path)
 			if rr.GitlinkUnknown {
-				unknown = append(unknown, s.Name)
+				byParent[s.Parent] = append(byParent[s.Parent], s.Name)
 			}
 		}
 		rr.CanPush, rr.Blocked = pushable(rr)
+		rr.CanPull, rr.PullBlocked, rr.PullMode = pullable(rr)
 		out = append(out, rr)
 	}
-	// An unknown gitlink stops the PARENT, not the submodule. The submodule is
-	// free to push — that is the cure — but the parent must not publish a tree
-	// pointing at a commit the submodule's remote has never heard of.
-	if len(unknown) > 0 && len(out) > 0 {
-		out[0].CanPush = false
-		out[0].Blocked = "not on its remote: " + strings.Join(unknown, ", ") +
-			" — push " + plural(len(unknown), "that submodule", "those submodules") + " first"
+	// An unknown gitlink stops the repository that RECORDS it, not the one that
+	// owns the commit. The submodule is free to push — that is the cure — but
+	// whoever points at it must not publish a tree naming a commit that
+	// submodule's remote has never heard of. With nesting, that is not always
+	// the checkout: easydb-webfrontend is stopped by easydb-library.
+	for i := range out {
+		names := byParent[subs[i].Path]
+		if len(names) == 0 {
+			continue
+		}
+		out[i].CanPush = false
+		out[i].Blocked = "not on its remote: " + strings.Join(names, ", ") +
+			" — push " + plural(len(names), "that submodule", "those submodules") + " first"
 	}
 	return out
+}
+
+func pastTense(action string) string {
+	switch action {
+	case "rebase":
+		return "rebased onto"
+	case "merge":
+		return "merged"
+	}
+	return "fast-forwarded to"
 }
 
 func plural(n int, one, many string) string {
@@ -147,13 +169,21 @@ func readRemote(root string) RemoteRepo {
 	if up, err := git(root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"); err == nil {
 		rr.Upstream = up
 	}
-	// where a branch with no upstream would go on its first push
+	// every remote, and which one a push goes to unless told otherwise
 	if remote, err := git(root, "remote"); err == nil && remote != "" {
-		names := strings.Split(remote, "\n")
-		rr.Remote = names[0]
-		for _, n := range names {
+		rr.Remotes = strings.Split(remote, "\n")
+		rr.Remote = rr.Remotes[0]
+		for _, n := range rr.Remotes {
 			if n == "origin" {
 				rr.Remote = "origin"
+			}
+		}
+		// an upstream names its own remote, and that beats the guess
+		if up, _, ok := strings.Cut(rr.Upstream, "/"); ok && up != "" {
+			for _, n := range rr.Remotes {
+				if n == up {
+					rr.Remote = n
+				}
 			}
 		}
 	}
@@ -229,10 +259,35 @@ func pushable(rr RemoteRepo) (bool, string) {
 	return true, ""
 }
 
+// pullable decides how to take in what the remote has, and picks the way that
+// suits where this branch stands rather than making the reader choose blind:
+//
+//	nothing behind   there is nothing to take in
+//	nothing of ours  a fast-forward — no merge commit for work that does not exist
+//	ours on top      rebase, which keeps the history of a branch you are still
+//	                 writing linear. Merge is offered beside it; it is the right
+//	                 answer once the branch is shared, and grove cannot know that
+func pullable(rr RemoteRepo) (bool, string, string) {
+	switch {
+	case rr.Detached:
+		return false, "detached HEAD: nothing to pull into", ""
+	case rr.Upstream == "":
+		return false, "no upstream to pull from", ""
+	case rr.Behind == 0:
+		return false, "already up to date", ""
+	case rr.Dirty > 0:
+		return false, "uncommitted changes: commit or discard them first", ""
+	case rr.Ahead == 0:
+		return true, "", "ff"
+	}
+	return true, "", "rebase"
+}
+
 type remoteRequest struct {
 	Name   string   `json:"name"`   // the checkout
 	Repos  []string `json:"repos"`  // which of its repositories to act on
-	Action string   `json:"action"` // fetch | push | rebase | merge
+	Action string   `json:"action"` // fetch | push | rebase | merge | ff
+	Remote string   `json:"remote"` // push: which remote, when there is a choice
 }
 
 // RepoResult is what one repository did, or would not.
@@ -249,7 +304,7 @@ func (d *grove) handleRemoteAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch req.Action {
-	case "fetch", "push", "rebase", "merge":
+	case "fetch", "push", "rebase", "merge", "ff":
 	default:
 		writeErr(w, http.StatusBadRequest, fmt.Errorf("unknown action %q", req.Action))
 		return
@@ -298,7 +353,7 @@ func (d *grove) handleRemoteAction(w http.ResponseWriter, r *http.Request) {
 		// publish exactly the broken state this refuses to publish.
 		for i := len(targets) - 1; i >= 0; i-- {
 			t := targets[i]
-			results = append(results, doRemote(t, standing[t.Name], req.Action))
+			results = append(results, doRemote(t, standing[t.Name], req.Action, req.Remote))
 		}
 	}
 	// every one of these changes what a scan would find
@@ -312,26 +367,31 @@ func (d *grove) handleRemoteAction(w http.ResponseWriter, r *http.Request) {
 // doRemote runs one action in one repository, against a standing read AFTER
 // the fetch — never against whatever the page happened to be showing when the
 // button was clicked.
-func doRemote(t subRepo, rr RemoteRepo, action string) RepoResult {
+func doRemote(t subRepo, rr RemoteRepo, action, remote string) RepoResult {
 	res := RepoResult{Repo: t.Name}
 	switch action {
-	case "rebase", "merge":
-		if rr.Upstream == "" {
-			return RepoResult{Repo: t.Name, Detail: "no upstream to " + action + " onto"}
+	case "rebase", "merge", "ff":
+		if ok, why, _ := pullable(rr); !ok {
+			if rr.Behind == 0 {
+				res.Ok, res.Detail = true, "already up to date"
+				return res
+			}
+			return RepoResult{Repo: t.Name, Detail: why}
 		}
-		if rr.Dirty > 0 {
-			return RepoResult{Repo: t.Name, Detail: "uncommitted changes: commit or discard them first"}
-		}
-		if rr.Behind == 0 {
-			res.Ok, res.Detail = true, "already up to date"
-			return res
+		args := []string{"merge", "--ff-only", rr.Upstream}
+		switch action {
+		case "merge":
+			// --no-ff is not forced: when it can fast-forward, it should
+			args = []string{"merge", rr.Upstream}
+		case "rebase":
+			args = []string{"rebase", rr.Upstream}
 		}
 		// no autostash and no strategy flags: a conflict should stop and be
 		// dealt with in a terminal, not be papered over from a dashboard
-		if out, err := git(t.Path, action, rr.Upstream); err != nil {
-			return RepoResult{Repo: t.Name, Detail: fmt.Sprintf("git %s %s: %v %s", action, rr.Upstream, err, out)}
+		if out, err := git(t.Path, args...); err != nil {
+			return RepoResult{Repo: t.Name, Detail: fmt.Sprintf("git %s: %v %s", strings.Join(args, " "), err, out)}
 		}
-		res.Ok, res.Detail = true, action+"d onto "+rr.Upstream
+		res.Ok, res.Detail = true, pastTense(action)+" "+rr.Upstream
 		return res
 
 	default: // push
@@ -340,91 +400,26 @@ func doRemote(t subRepo, rr RemoteRepo, action string) RepoResult {
 		if ok, why := pushable(rr); !ok {
 			return RepoResult{Repo: t.Name, Detail: why}
 		}
+		// never --force, and never --force-with-lease: grove does not rewrite
+		// anybody's history, including yours
 		args := []string{"push"}
-		if rr.Upstream == "" {
-			args = append(args, "--set-upstream", rr.Remote, rr.Branch)
+		to := rr.Remote
+		if remote != "" {
+			to = remote
+		}
+		if rr.Upstream == "" || (remote != "" && !strings.HasPrefix(rr.Upstream, to+"/")) {
+			args = append(args, "--set-upstream", to, rr.Branch)
 		}
 		if out, err := git(t.Path, args...); err != nil {
 			return RepoResult{Repo: t.Name, Detail: fmt.Sprintf("git push: %v %s", err, out)}
 		}
 		where := rr.Upstream
-		if where == "" {
+		if remote != "" {
+			where = remote + "/" + rr.Branch
+		} else if where == "" {
 			where = rr.Remote + "/" + rr.Branch
 		}
 		res.Ok, res.Detail = true, "pushed to "+where
 		return res
-	}
-}
-
-// ── fetching on its own ──────────────────────────────────────────────────
-//
-// Off for every repository until somebody turns it on, and remembered per
-// repository rather than globally: one project whose remote you care about
-// being current is not a reason to reach out to seventy-three others.
-//
-// A repository's worktrees share one object store, so one fetch there brings
-// every worktree's remote-tracking refs up to date at once. Submodules are
-// repositories of their own and do not come along, so each checked-out one is
-// fetched too — which is what makes the parent's "is this gitlink known"
-// answer worth anything.
-
-const autoFetchEvery = 5 * time.Minute
-
-func (d *grove) handleAutoFetch(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Repo string `json:"repo"` // repository path
-		On   bool   `json:"on"`
-	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req); err != nil {
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("bad request body: %w", err))
-		return
-	}
-	if req.Repo == "" {
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("no repository named"))
-		return
-	}
-	s := loadSettings()
-	if s.AutoFetch == nil {
-		s.AutoFetch = map[string]bool{}
-	}
-	if req.On {
-		s.AutoFetch[normPath(req.Repo)] = true
-	} else {
-		delete(s.AutoFetch, normPath(req.Repo))
-	}
-	if err := s.save(); err != nil {
-		writeErr(w, http.StatusInternalServerError, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"repo": req.Repo, "on": req.On})
-}
-
-// autoFetchLoop keeps the enabled repositories' remote refs current. It reads
-// the setting each round rather than caching it, so turning it on takes effect
-// without a restart.
-func (d *grove) autoFetchLoop(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(autoFetchEvery):
-		}
-		for repo, on := range loadSettings().AutoFetch {
-			if !on {
-				continue
-			}
-			// the repository itself: one fetch, every worktree's refs
-			git(repo, "fetch", "--prune")
-			// and each checkout's submodules, which are their own repositories
-			for _, p := range func() []string { ps, _ := worktreePaths(repo); return ps }() {
-				c := Checkout{Name: filepath.Base(p), Path: p, Repo: filepath.Base(repo)}
-				for i, s := range diffRepos(c) {
-					if i > 0 {
-						git(s.Path, "fetch", "--prune")
-					}
-				}
-			}
-		}
-		d.dropCaches()
 	}
 }

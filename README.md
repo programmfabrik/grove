@@ -489,16 +489,36 @@ refused until the submodule is pushed — and the submodule itself is never
 refused for this, because pushing it is the cure. Selecting both pushes the
 submodule first for the same reason.
 
-The select beside the buttons is which repositories to act on. A submodule is
-normally detached — that is what a submodule is, a commit rather than a branch
-— so it starts unselected and says nothing about it.
+**One repository at a time.** The caret beside each button chooses which, and
+the button says which branch it would move — `Push main`. A checkout carrying
+submodules is several repositories with separate remotes and separate
+standings, and "push these three" is one button hiding three different answers
+to whether it is even allowed. The submodules nest, too, and the flat list does
+not show it: `easydb-library` is declared by `easydb-webfrontend`, which is
+declared by `fylr`, and only `easydb-webfrontend` records a commit for it — so
+that is the repository an unknown id stops. Where a repository has more than
+one remote, the same popover chooses it.
 
-**Fetching on a timer** is behind the caret next to Fetch, off until you turn
-it on and remembered per repository: one project whose remote you want current
-is not a reason to reach out to seventy-three others. It covers the whole
-repository — a repository's worktrees share one object store, so one fetch
-serves them all — and each checkout's submodules, which are repositories of
-their own and do not come along.
+**Pull asks how**, in a dialog rather than behind a caret, because the three
+ways in are not interchangeable and their names do not say how they differ.
+Each is explained in a sentence, only the possible ones are offered — a
+fast-forward is not offered when you have commits of your own on top — and one
+is marked *suggested* when the situation has a right answer:
+
+| where you stand | what grove suggests |
+| --- | --- |
+| nothing of yours on top | **fast-forward** — one right answer, no history rewritten, no merge commit for work that does not exist |
+| your commits on top | **rebase**, while they are still yours alone. Merge is right once anybody else has them, and grove cannot tell which, so it says so rather than pretending |
+
+**Fetching happens on its own** while a checkout is open, which is what lets
+any of these numbers mean anything. Every five seconds is the aim and not
+always the outcome: a round over four repositories on a real remote measured
+eight seconds here, and something that takes eight seconds cannot happen every
+five — it would run back to back for as long as the window is open, thousands
+of connections an hour to somebody else's server. So the next round waits twice
+however long the last one took. Quick remotes get the five seconds; slow ones
+settle at spending a third of the time fetching and the rest leaving the remote
+alone. A window nobody is looking at fetches nothing.
 
 ## What the loopback port is, and is not
 

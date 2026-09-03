@@ -85,18 +85,11 @@ export const api = {
   // fetch, push, rebase or merge. Always fetches first, always every
   // repository under the checkout, because whether the parent may push
   // depends on what the submodules' remotes hold.
-  // fetch on a timer, remembered per repository (all its worktrees share one
-  // object store, so one fetch serves them all)
-  autoFetch: (repo: string, on: boolean): Promise<{ repo: string; on: boolean }> =>
-    fetch('api/autofetch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ repo, on }),
-    }).then((r) => j<{ repo: string; on: boolean }>(r)),
   remoteAct: (body: {
     name: string
     repos: string[]
-    action: 'fetch' | 'push' | 'rebase' | 'merge'
+    action: 'fetch' | 'push' | 'rebase' | 'merge' | 'ff'
+    remote?: string
   }): Promise<{ results: RemoteResult[]; repos: RemoteState['repos'] }> =>
     fetch('api/remote', {
       method: 'POST',

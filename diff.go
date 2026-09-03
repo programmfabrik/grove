@@ -90,7 +90,12 @@ type DiffList struct {
 
 // subRepo is one of the repositories a checkout spans, named for the scope
 // and diff lists.
-type subRepo struct{ Name, Path string }
+// subRepo is one of the repositories a checkout spans. Parent is the
+// repository that declares it — its IMMEDIATE parent, which for a nested
+// submodule is another submodule and not the checkout. The list is flat and
+// the nesting is not: easydb-library is declared by easydb-webfrontend, which
+// is declared by fylr, and only easydb-webfrontend records a commit for it.
+type subRepo struct{ Name, Path, Parent string }
 
 // primaryRepo names a checkout's own repository in the scope and diff lists.
 func primaryRepo(c Checkout) string {
@@ -107,7 +112,7 @@ func primaryRepo(c Checkout) string {
 // left out. Names are the submodule directory's base name; a name that
 // repeats at another depth keeps its full relative path instead.
 func diffRepos(c Checkout) []subRepo {
-	out := []subRepo{{primaryRepo(c), c.Path}}
+	out := []subRepo{{primaryRepo(c), c.Path, ""}}
 	seen := map[string]bool{out[0].Name: true}
 	var walk func(root, prefix string, depth int)
 	walk = func(root, prefix string, depth int) {
@@ -124,7 +129,7 @@ func diffRepos(c Checkout) []subRepo {
 				name = filepath.ToSlash(filepath.Join(prefix, rel))
 			}
 			seen[name] = true
-			out = append(out, subRepo{name, path})
+			out = append(out, subRepo{name, path, root})
 			walk(path, filepath.Join(prefix, rel), depth+1)
 		}
 	}

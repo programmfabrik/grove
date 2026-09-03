@@ -144,7 +144,7 @@ func TestPushAndRebaseAgainstARealRemote(t *testing.T) {
 
 	rr := readRemote(work)
 	rr.CanPush, rr.Blocked = pushable(rr)
-	if res := doRemote(self, rr, "push"); !res.Ok {
+	if res := doRemote(self, rr, "push", ""); !res.Ok {
 		t.Fatalf("push refused: %s", res.Detail)
 	}
 	if out, _ := git(remote, "log", "--oneline", "-1", "main"); !strings.Contains(out, "mine") {
@@ -175,7 +175,7 @@ func TestPushAndRebaseAgainstARealRemote(t *testing.T) {
 	}
 
 	// rebase takes us onto it, and then the push goes
-	if res := doRemote(self, rr, "rebase"); !res.Ok {
+	if res := doRemote(self, rr, "rebase", ""); !res.Ok {
 		t.Fatalf("rebase failed: %s", res.Detail)
 	}
 	rr = readRemote(work)
@@ -183,7 +183,7 @@ func TestPushAndRebaseAgainstARealRemote(t *testing.T) {
 	if !rr.CanPush {
 		t.Fatalf("still cannot push after rebasing: %s", rr.Blocked)
 	}
-	if res := doRemote(self, rr, "push"); !res.Ok {
+	if res := doRemote(self, rr, "push", ""); !res.Ok {
 		t.Fatalf("push after rebase refused: %s", res.Detail)
 	}
 	if out, _ := git(remote, "log", "--oneline", "main"); !strings.Contains(out, "mine again") || !strings.Contains(out, "theirs") {
@@ -191,7 +191,9 @@ func TestPushAndRebaseAgainstARealRemote(t *testing.T) {
 	}
 }
 
-// A dirty tree is not something to rebase over somebody's back.
+// A dirty tree is not something to rebase over somebody's back — and the case
+// only arises when there is something to pull, since otherwise "nothing to do"
+// is the honest answer whatever the tree looks like.
 func TestRebaseRefusesADirtyTree(t *testing.T) {
 	requireGit(t)
 	dir := t.TempDir()
@@ -200,11 +202,113 @@ func TestRebaseRefusesADirtyTree(t *testing.T) {
 	work := initRepo(t, filepath.Join(dir, "work"))
 	gitRun(t, work, "remote", "add", "origin", remote)
 	gitRun(t, work, "push", "-q", "-u", "origin", "main")
+
+	// somebody else moves the branch on, so we are genuinely behind
+	other := filepath.Join(dir, "other")
+	gitRun(t, dir, "clone", "-q", remote, other)
+	identify(t, other)
+	write(t, other, "theirs.txt", "theirs\n")
+	gitRun(t, other, "add", "theirs.txt")
+	gitRun(t, other, "commit", "-q", "-m", "theirs")
+	gitRun(t, other, "push", "-q", "origin", "main")
+	gitRun(t, work, "fetch", "-q", "origin")
+
 	write(t, work, "a.txt", "changed but not committed\n")
 
 	rr := readRemote(work)
-	res := doRemote(subRepo{Name: "work", Path: work}, rr, "rebase")
+	if ok, why, _ := pullable(rr); ok {
+		t.Errorf("a dirty tree was offered a pull: %q", why)
+	}
+	res := doRemote(subRepo{Name: "work", Path: work}, rr, "rebase", "")
 	if res.Ok || !strings.Contains(res.Detail, "uncommitted") {
 		t.Errorf("a dirty tree was rebased: %+v", res)
 	}
+}
+
+// Which way in grove suggests, and why.
+func TestPullModeFitsWhereTheBranchStands(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		rr   RemoteRepo
+		ok   bool
+		mode string
+	}{
+		{"nothing to pull", RemoteRepo{Branch: "b", Upstream: "origin/b"}, false, ""},
+		{"only theirs — a fast-forward",
+			RemoteRepo{Branch: "b", Upstream: "origin/b", Behind: 3}, true, "ff"},
+		{"ours on top — keep it linear",
+			RemoteRepo{Branch: "b", Upstream: "origin/b", Behind: 3, Ahead: 2}, true, "rebase"},
+		{"dirty", RemoteRepo{Branch: "b", Upstream: "origin/b", Behind: 1, Dirty: 4}, false, ""},
+		{"detached", RemoteRepo{Detached: true, Behind: 1}, false, ""},
+		{"no upstream", RemoteRepo{Branch: "b", Remote: "origin", Behind: 1}, false, ""},
+	} {
+		ok, _, mode := pullable(c.rr)
+		if ok != c.ok || mode != c.mode {
+			t.Errorf("%s: pullable = (%v, %q), want (%v, %q)", c.name, ok, mode, c.ok, c.mode)
+		}
+	}
+}
+
+// Submodules nest, and the flat list grove shows does not. easydb-library is
+// declared by easydb-webfrontend, which is declared by fylr — and only
+// easydb-webfrontend records a commit for it. Checking every submodule against
+// the CHECKOUT asked the wrong repository for a path it does not have, got
+// nothing back, and quietly checked nothing at all.
+func TestANestedSubmoduleStopsItsOwnParent(t *testing.T) {
+	requireGit(t)
+	dir := t.TempDir()
+	remotes := map[string]string{}
+	for _, n := range []string{"leaf", "mid", "top"} {
+		remotes[n] = filepath.Join(dir, n+".git")
+		gitRun(t, dir, "init", "-q", "--bare", "-b", "main", remotes[n])
+	}
+	build := func(name string) string {
+		p := initRepo(t, filepath.Join(dir, name))
+		gitRun(t, p, "remote", "add", "origin", remotes[name])
+		gitRun(t, p, "push", "-q", "-u", "origin", "main")
+		return p
+	}
+	leaf, mid, top := build("leaf"), build("mid"), build("top")
+	add := func(parent, url, at string) {
+		gitRun(t, parent, "-c", "protocol.file.allow=always", "submodule", "add", "-q", url, at)
+		gitRun(t, parent, "commit", "-q", "-m", "add "+at)
+		identify(t, filepath.Join(parent, at))
+	}
+	add(mid, remotes["leaf"], "leaf")
+	gitRun(t, mid, "push", "-q", "origin", "main")
+	add(top, remotes["mid"], "mid")
+	gitRun(t, top, "push", "-q", "origin", "main")
+	// `submodule add` does not recurse, so mid's own submodule is a bare
+	// directory inside top until it is asked for
+	gitRun(t, filepath.Join(top, "mid"), "-c", "protocol.file.allow=always",
+		"submodule", "update", "--init", "-q")
+	identify(t, filepath.Join(top, "mid", "leaf"))
+
+	c := Checkout{Name: "top", Path: normPath(top), Repo: "top"}
+	if got := len(remoteRepos(c)); got != 3 {
+		t.Fatalf("found %d repositories, want top, mid and leaf", got)
+	}
+
+	// a commit in the leaf that its remote does not have, recorded by MID
+	leafIn := filepath.Join(top, "mid", "leaf")
+	write(t, leafIn, "x.txt", "local only\n")
+	gitRun(t, leafIn, "add", "x.txt")
+	gitRun(t, leafIn, "commit", "-q", "-m", "unpushed")
+	midIn := filepath.Join(top, "mid")
+	gitRun(t, midIn, "add", "leaf")
+	gitRun(t, midIn, "commit", "-q", "-m", "bump leaf")
+
+	repos := remoteRepos(c)
+	if !byName(repos, "leaf").GitlinkUnknown {
+		t.Error("the leaf's unpushed commit was not noticed")
+	}
+	if byName(repos, "mid").CanPush {
+		t.Error("mid was allowed to publish a pointer to a commit leaf's remote lacks")
+	}
+	// and the checkout is untouched by it: top records mid, not leaf, and what
+	// it records for mid is still on mid's remote
+	if got := byName(repos, "top"); !got.CanPush && strings.Contains(got.Blocked, "leaf") {
+		t.Errorf("top was blamed for the leaf: %s", got.Blocked)
+	}
+	_ = leaf
 }

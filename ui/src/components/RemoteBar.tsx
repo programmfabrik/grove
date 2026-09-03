@@ -1,75 +1,135 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
 import type { RemoteRepo, RemoteResult } from '../types'
-import { fmtAgo } from '../lib/format'
 
-// Push, and the two ways out when it cannot.
+// Push and Pull, in the checkout's head.
 //
-// The button is only ever enabled when the server says so, and the server
-// decides again after the fetch it does on the way — so what is on screen can
-// go stale without becoming a lie. When the remote has moved, push greys out
-// and the two honest answers take its place: rebase onto it, or merge it.
+// Both are decided by the server and re-decided after the fetch it does on the
+// way, so what is on screen can go stale without becoming a lie. Neither ever
+// forces anything: grove does not rewrite history, yours included.
 //
-// The select is which repositories to act on, because a checkout with
-// submodules is several of them with separate remotes. Submodules are pushed
-// before the parent: pushing a submodule is what makes the parent's pointer to
-// it followable, so the other order publishes exactly the state grove refuses
-// to publish.
+// One repository at a time. A checkout carrying submodules is several
+// repositories with separate remotes and separate standings — "push these
+// three" is one button hiding three different answers to whether it is even
+// allowed, and the one that matters is usually the one it hid.
+//
+// The checkout's repositories are fetched while it is open, which is what lets
+// the buttons mean something — "behind" read from refs nobody has updated
+// since Tuesday is not information. Every five seconds is the aim and not
+// always the outcome: a cycle over four repositories on a real remote measured
+// eight seconds here, and something that takes eight seconds cannot happen
+// every five. The next round waits twice however long the last one took, so
+// quick remotes get the five seconds asked for and slow ones settle at
+// spending a third of the time fetching and the rest leaving the remote alone.
 
-type Action = 'fetch' | 'push' | 'rebase' | 'merge'
+type Action = 'push' | 'rebase' | 'merge' | 'ff'
+const FETCH_EVERY = 5000
+
+type Way = { mode: Exclude<Action, 'push'>; label: string; what: string }
+
+// What each way in actually does, in a sentence, because the difference
+// matters and the names do not say it.
+const WAYS: Way[] = [
+  {
+    mode: 'ff',
+    label: 'Fast-forward',
+    what: 'Move your branch onto theirs. Nothing is rewritten and no merge commit is made — possible only when you have no commits of your own on top.',
+  },
+  {
+    mode: 'rebase',
+    label: 'Rebase',
+    what: 'Replay your commits on top of theirs, so the branch stays a straight line. Your commits get new ids, which is fine while nobody else has them.',
+  },
+  {
+    mode: 'merge',
+    label: 'Merge',
+    what: 'Bring theirs in beside yours and tie the two together with a merge commit. Nothing is rewritten, so this is the answer once others have your commits.',
+  },
+]
 
 export function RemoteBar({ name, onChanged }: { name: string; onChanged: () => void }) {
   const [repos, setRepos] = useState<RemoteRepo[] | null>(null)
-  const [repoPath, setRepoPath] = useState('')
-  const [auto, setAuto] = useState(false)
-  const [autoOpen, setAutoOpen] = useState(false)
-  const [picked, setPicked] = useState<string[] | null>(null) // null = all
+  const [pick, setPick] = useState<string | null>(null) // repo name; null = the checkout's own
+  const [remote, setRemote] = useState<string | null>(null)
   const [busy, setBusy] = useState<Action | null>(null)
   const [results, setResults] = useState<RemoteResult[] | null>(null)
-  const [open, setOpen] = useState(false)
+  const [menu, setMenu] = useState<'push' | 'pull' | null>(null)
+  const [asking, setAsking] = useState(false) // the how-to-pull dialog
 
-  const load = useCallback(() => {
-    api
-      .remote(name)
-      .then((s) => {
-        setRepos(s.repos)
-        setRepoPath(s.repo || '')
-        setAuto(!!s.auto_fetch)
-      })
-      .catch(() => setRepos(null))
-  }, [name])
+  const load = useCallback(
+    () =>
+      api
+        .remote(name)
+        .then((s) => setRepos(s.repos))
+        .catch(() => {}),
+    [name],
+  )
 
   useEffect(() => {
     setRepos(null)
-    setPicked(null)
+    setPick(null)
+    setRemote(null)
     setResults(null)
+    setAsking(false)
     load()
   }, [name, load])
 
+  useEffect(() => {
+    let stopped = false
+    let timer = 0
+    const round = async () => {
+      if (stopped) return
+      let wait = FETCH_EVERY
+      // nothing is worth fetching for a window nobody is looking at
+      if (!document.hidden) {
+        const started = performance.now()
+        try {
+          const res = await api.remoteAct({ name, repos: [], action: 'fetch' })
+          if (!stopped) setRepos(res.repos)
+        } catch {
+          // offline, or a remote that wants a password: say nothing and carry
+          // on showing what was last known
+        }
+        wait = Math.max(FETCH_EVERY, (performance.now() - started) * 2)
+      }
+      if (!stopped) timer = window.setTimeout(round, wait)
+    }
+    timer = window.setTimeout(round, FETCH_EVERY)
+    return () => {
+      stopped = true
+      clearTimeout(timer)
+    }
+  }, [name])
+
+  useEffect(() => {
+    if (!menu) return
+    const close = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.rb')) setMenu(null)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [menu])
+
   if (!repos || !repos.length) return null
 
-  // A submodule is normally detached — that is what a submodule IS, a commit
-  // rather than a branch — so it is not something to push and not something to
-  // complain about. It starts unselected and says nothing.
-  const actionable = repos.filter((r) => !r.detached).map((r) => r.name)
-  const selected = picked ?? actionable
-  const chosen = repos.filter((r) => selected.includes(r.name))
-  const parent = repos[0]
+  const repo = repos.find((r) => r.name === pick) ?? repos[0]
+  const remotes = repo.remotes ?? []
+  const pushTo = remote ?? repo.remote
 
-  // what the selection can do, as the server sees it
-  const canPush = chosen.some((r) => r.can_push)
-  const behind = chosen.filter((r) => r.behind > 0)
-  // only obstacles worth acting on: being detached is a standing fact, not
-  // something the reader can do anything about
-  const blocked = chosen.filter((r) => !r.can_push && r.blocked && !r.detached)
-  const ahead = chosen.reduce((n, r) => n + r.ahead, 0)
-  const stale = parent.fetched_at
+  // which ways in are actually available here, and which one grove will stand
+  // behind. Nothing of ours on top is the only case with one right answer.
+  const offered = repo.can_pull
+    ? WAYS.filter((w) => w.mode !== 'ff' || repo.ahead === 0)
+    : []
+  const advised = repo.ahead === 0 ? 'ff' : repo.pull_mode || ''
 
   const act = (action: Action) => {
     setBusy(action)
     setResults(null)
+    setMenu(null)
+    setAsking(false)
     api
-      .remoteAct({ name, repos: selected, action })
+      .remoteAct({ name, repos: [repo.name], action, remote: remote ?? undefined })
       .then((res) => {
         setRepos(res.repos)
         setResults(res.results)
@@ -79,121 +139,75 @@ export function RemoteBar({ name, onChanged }: { name: string; onChanged: () => 
       .finally(() => setBusy(null))
   }
 
-  const toggle = (n: string) =>
-    setPicked((p) => {
-      const cur = p ?? actionable
-      return cur.includes(n) ? cur.filter((x) => x !== n) : [...cur, n]
-    })
+  const which = repo.detached ? 'detached' : repo.branch ?? ''
 
   return (
     <div className="rb">
       <div className="rb-row">
-        <button
-          className="btn-ghost rb-push"
-          disabled={!canPush || busy !== null}
-          onClick={() => act('push')}
-          title={
-            canPush
-              ? `Fetch, then push ${ahead} commit${ahead === 1 ? '' : 's'}`
-              : blocked.map((r) => `${r.name}: ${r.blocked}`).join('\n') || 'nothing to push'
-          }
-        >
-          {busy === 'push' ? 'Pushing…' : `Push${ahead ? ` ${ahead}` : ''}`}
-        </button>
-
-        {/* the remote moved: rebase or merge are the only honest answers */}
-        {behind.length > 0 && (
-          <>
-            <button className="btn-ghost" disabled={busy !== null} onClick={() => act('rebase')}
-              title={behind.map((r) => `${r.name}: ${r.behind} behind ${r.upstream}`).join('\n')}>
-              {busy === 'rebase' ? 'Rebasing…' : 'Fetch & rebase'}
-            </button>
-            <button className="btn-ghost" disabled={busy !== null} onClick={() => act('merge')}>
-              {busy === 'merge' ? 'Merging…' : 'Fetch & merge'}
-            </button>
-          </>
-        )}
-
-        <span className="rb-split-btn">
-          <button className="btn-ghost" disabled={busy !== null} onClick={() => act('fetch')}
-            title={stale ? `last fetched ${fmtAgo(stale)}` : 'never fetched'}>
-            {busy === 'fetch' ? 'Fetching…' : 'Fetch'}
+        <span className="rb-split">
+          <button
+            className="btn-ghost rb-go"
+            disabled={!repo.can_push || busy !== null}
+            onClick={() => act('push')}
+            title={repo.can_push ? `Fetch, then push ${repo.name} to ${pushTo}` : repo.blocked || 'nothing to push'}
+          >
+            {busy === 'push' ? 'Pushing…' : `Push ${which}`}
+            {repo.ahead > 0 && <span className="rb-n"> {repo.ahead}</span>}
           </button>
           <button
-            className={auto ? 'btn-ghost rb-caret on' : 'btn-ghost rb-caret'}
-            onClick={() => setAutoOpen((o) => !o)}
-            title={auto ? 'fetching on its own every 5 minutes' : 'fetch on a timer?'}
+            className={menu === 'push' ? 'btn-ghost rb-caret on' : 'btn-ghost rb-caret'}
+            onClick={() => setMenu((m) => (m === 'push' ? null : 'push'))}
+            title="which repository, and where"
           >
-            {auto ? '⟳' : '▾'}
-          </button>
-        </span>
-
-        {/* which repositories: only worth a control when there is more than one */}
-        {repos.length > 1 && (
-          <button className={open ? 'btn-ghost on' : 'btn-ghost'} onClick={() => setOpen((o) => !o)}
-            title="which repositories to act on">
-            {selected.length === repos.length
-              ? 'all repos'
-              : `${selected.length} of ${repos.length}`}{' '}
             ▾
           </button>
-        )}
-        {stale && <span className="rb-stale dim" title={stale}>fetched {fmtAgo(stale)}</span>}
+          {menu === 'push' && (
+            <div className="rb-pop">
+              <RepoPicker repos={repos} pick={repo.name} onPick={(n) => { setPick(n); setRemote(null) }} />
+              {remotes.length > 1 && (
+                <>
+                  <div className="rb-sep" />
+                  <div className="rb-pop-title">remote</div>
+                  {remotes.map((rm) => (
+                    <label key={rm} className="rb-pop-row">
+                      <input type="radio" name="rb-remote" checked={pushTo === rm} onChange={() => setRemote(rm)} />
+                      <span className="mono">{rm}</span>
+                    </label>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+        </span>
+
+        <span className="rb-split">
+          <button
+            className="btn-ghost rb-go"
+            disabled={!repo.can_pull || busy !== null}
+            onClick={() => setAsking(true)}
+            title={repo.can_pull ? `Bring in ${repo.behind} from ${repo.upstream}` : repo.pull_blocked || 'already up to date'}
+          >
+            {busy && busy !== 'push' ? 'Pulling…' : `Pull ${which}`}
+            {repo.behind > 0 && <span className="rb-n"> {repo.behind}</span>}
+          </button>
+          <button
+            className={menu === 'pull' ? 'btn-ghost rb-caret on' : 'btn-ghost rb-caret'}
+            onClick={() => setMenu((m) => (m === 'pull' ? null : 'pull'))}
+            title="which repository"
+          >
+            ▾
+          </button>
+          {menu === 'pull' && (
+            <div className="rb-pop">
+              <RepoPicker repos={repos} pick={repo.name} onPick={(n) => { setPick(n); setRemote(null) }} />
+            </div>
+          )}
+        </span>
       </div>
 
-      {autoOpen && (
-        <div className="rb-pick">
-          <label className="rb-pick-row" title={repoPath}>
-            <input
-              type="checkbox"
-              checked={auto}
-              disabled={!repoPath}
-              onChange={(e) => {
-                const on = e.target.checked
-                setAuto(on)
-                api.autoFetch(repoPath, on).catch(() => setAuto(!on))
-              }}
-            />
-            <span>fetch every 5 minutes</span>
-          </label>
-          {/* said plainly: this is grove reaching out on its own, and it is the
-              whole repository rather than this one checkout */}
-          <div className="rb-hint dim">
-            the whole repository — every worktree and their submodules
-          </div>
-        </div>
-      )}
-
-      {open && repos.length > 1 && (
-        <div className="rb-pick">
-          {repos.map((r) => (
-            <label
-              key={r.name}
-              className={r.detached ? 'rb-pick-row rb-detached' : 'rb-pick-row'}
-              title={r.blocked || ''}
-            >
-              <input type="checkbox" checked={selected.includes(r.name)} onChange={() => toggle(r.name)} />
-              <span className="mono">{r.name}</span>
-              <span className="dim">{r.detached ? 'detached' : r.branch}</span>
-              <span className="rb-num">
-                {r.ahead > 0 && <span className="on ahead">↑ {r.ahead}</span>}
-                {r.behind > 0 && <span className="on behind">↓ {r.behind}</span>}
-              </span>
-              {r.gitlink_unknown && (
-                <span className="rb-warn" title={`${r.gitlink} is on no remote branch`}>unpushed id</span>
-              )}
-            </label>
-          ))}
-        </div>
-      )}
-
-      {blocked.length > 0 && !busy && (
+      {!repo.can_push && repo.blocked && !repo.detached && !busy && (
         <div className="rb-note dim">
-          {blocked.map((r) => (
-            <div key={r.name}>
-              <span className="mono">{r.name}</span> — {r.blocked}
-            </div>
-          ))}
+          <span className="mono">{repo.name}</span> — {repo.blocked}
         </div>
       )}
 
@@ -206,6 +220,113 @@ export function RemoteBar({ name, onChanged }: { name: string; onChanged: () => 
           ))}
         </div>
       )}
+
+      {asking && (
+        <HowToPull repo={repo} offered={offered} advised={advised} onCancel={() => setAsking(false)} onPick={act} />
+      )}
     </div>
+  )
+}
+
+// The three ways in are not interchangeable and their names do not say how
+// they differ, so the choice is made in front of the reader rather than behind
+// a caret — with what each one does, and which one grove will stand behind
+// when the situation has one right answer.
+function HowToPull({
+  repo,
+  offered,
+  advised,
+  onCancel,
+  onPick,
+}: {
+  repo: RemoteRepo
+  offered: Way[]
+  advised: string
+  onCancel: () => void
+  onPick: (a: Action) => void
+}) {
+  const [mode, setMode] = useState<Action>((advised || offered[0]?.mode || 'merge') as Action)
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h2 className="modal-title">
+          Pull {repo.behind} into <span className="mono">{repo.name}</span>
+        </h2>
+        <div className="modal-body">
+          <p className="dim">
+            <span className="mono">{repo.upstream}</span> has {repo.behind} commit
+            {repo.behind === 1 ? '' : 's'} you do not
+            {repo.ahead > 0 && <>, and you have {repo.ahead} it does not</>}.
+          </p>
+          {repo.ahead === 0 ? (
+            <p className="dim">
+              Nothing of yours sits on top, so there is one right answer and no history to rewrite.
+            </p>
+          ) : (
+            <p className="dim">
+              Your {repo.ahead} commit{repo.ahead === 1 ? ' sits' : 's sit'} on top, so this is a judgement:
+              rebase while they are still yours alone, merge once anybody else has them. grove cannot
+              tell which, so it does not pretend to.
+            </p>
+          )}
+          <div className="rb-ways">
+            {offered.map((w) => (
+              <label key={w.mode} className={mode === w.mode ? 'rb-way-row on' : 'rb-way-row'}>
+                <input type="radio" name="rb-how" checked={mode === w.mode} onChange={() => setMode(w.mode)} />
+                <span className="rb-way-head">
+                  {w.label}
+                  {w.mode === advised && <span className="rb-advised">suggested</span>}
+                </span>
+                <span className="rb-way-what dim">{w.what}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button className="btn-ghost" onClick={onCancel}>
+            Cancel
+          </button>
+          <button className="btn-ghost rb-go" onClick={() => onPick(mode)} disabled={!offered.length}>
+            {WAYS.find((w) => w.mode === mode)?.label ?? 'Pull'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RepoPicker({
+  repos,
+  pick,
+  onPick,
+}: {
+  repos: RemoteRepo[]
+  pick: string
+  onPick: (n: string) => void
+}) {
+  return (
+    <>
+      <div className="rb-pop-title">repository</div>
+      {repos.map((r) => (
+        <label
+          key={r.name}
+          className={r.detached ? 'rb-pop-row rb-detached' : 'rb-pop-row'}
+          title={r.blocked || r.pull_blocked || ''}
+        >
+          <input type="radio" name="rb-repo" checked={pick === r.name} onChange={() => onPick(r.name)} />
+          <span className="mono">{r.name}</span>
+          <span className="dim">{r.detached ? 'detached' : r.branch}</span>
+          <span className="rb-num">
+            {r.ahead > 0 && <span className="ahead">↑ {r.ahead}</span>}
+            {r.behind > 0 && <span className="behind">↓ {r.behind}</span>}
+          </span>
+          {r.gitlink_unknown && (
+            <span className="rb-warn" title={`${r.gitlink} is on no remote branch`}>
+              unpushed id
+            </span>
+          )}
+        </label>
+      ))}
+    </>
   )
 }

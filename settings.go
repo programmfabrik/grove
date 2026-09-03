@@ -19,11 +19,6 @@ import (
 
 type settings struct {
 	Dir string `json:"dir"` // the directory of repositories last opened
-	// AutoFetch is which repositories keep their remote refs current on their
-	// own, keyed by repository path. Off for everything until asked: grove
-	// reaching out to a remote is something you turn on, not something you
-	// discover it has been doing.
-	AutoFetch map[string]bool `json:"auto_fetch,omitempty"`
 }
 
 // settingsPath is the OS's own place for it: Application Support on macOS,
