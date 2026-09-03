@@ -142,6 +142,65 @@ func remoteRepos(c Checkout) []RemoteRepo {
 	return out
 }
 
+// rebaseWithStash rebases a tree that has uncommitted work in it, by setting
+// that work aside and putting it back.
+//
+// The whole point is that there is no in-between state to be left in. A rebase
+// that stops halfway, or a stash that will not reapply, is worse than not
+// having started: you are somewhere you did not ask to be, holding two things
+// to reconcile by hand. So every step that can fail is followed by the step
+// that undoes it, and there are exactly two outcomes — the rebase happened and
+// your changes are back on top of it, or nothing happened at all and your
+// changes are where they were.
+//
+// The one thing that cannot be undone is losing them, so they stay in the
+// stash if they will not come back cleanly, and the message says so.
+func rebaseWithStash(root, upstream string) (string, error) {
+	start, err := git(root, "rev-parse", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("cannot read HEAD: %w", err)
+	}
+
+	dirty, _ := git(root, "status", "--porcelain", "-uall")
+	stashed := false
+	if dirty != "" {
+		// --include-untracked: a file you have not added can still be in the
+		// way of one the rebase wants to create
+		if out, err := git(root, "stash", "push", "--include-untracked",
+			"-m", "grove: rebasing onto "+upstream); err != nil {
+			return "", fmt.Errorf("could not set your changes aside, so nothing was done: %v %s", err, out)
+		}
+		stashed = true
+	}
+
+	if out, err := git(root, "rebase", upstream); err != nil {
+		// back to where we started, and hand the changes back
+		git(root, "rebase", "--abort")
+		if stashed {
+			git(root, "stash", "pop")
+		}
+		return "", fmt.Errorf("the rebase stopped and was undone — nothing changed: %v %s", err, out)
+	}
+
+	if !stashed {
+		return "rebased onto " + upstream, nil
+	}
+
+	if out, err := git(root, "stash", "pop"); err != nil {
+		// The rebase worked and the changes will not sit on top of it. A
+		// rebased branch plus a stash nobody asked for is exactly the
+		// in-between state this exists to avoid, so put it all back.
+		git(root, "reset", "--hard", start)
+		if _, again := git(root, "stash", "pop"); again != nil {
+			return "", fmt.Errorf("your changes conflict with %s. The rebase was undone and they are "+
+				"waiting in the stash — `git stash pop` when you are ready: %v %s", upstream, err, out)
+		}
+		return "", fmt.Errorf("your changes conflict with %s, so the rebase was undone "+
+			"and nothing changed: %v %s", upstream, err, out)
+	}
+	return "rebased onto " + upstream + ", your changes back on top", nil
+}
+
 func pastTense(action string) string {
 	switch action {
 	case "rebase":
@@ -245,7 +304,7 @@ func gitlinkStanding(parent, subPath string) (sha string, unknown bool) {
 func pushable(rr RemoteRepo) (bool, string) {
 	switch {
 	case rr.Detached:
-		return false, "detached HEAD: no branch to push"
+		return false, "a detached HEAD is a commit, not a branch: nothing to push"
 	// GitlinkUnknown is deliberately not here. It stops the PARENT, which
 	// remoteRepos handles, and must never stop the submodule: pushing the
 	// submodule is exactly the cure, and refusing it would leave no way out.
@@ -267,16 +326,21 @@ func pushable(rr RemoteRepo) (bool, string) {
 //	ours on top      rebase, which keeps the history of a branch you are still
 //	                 writing linear. Merge is offered beside it; it is the right
 //	                 answer once the branch is shared, and grove cannot know that
+//
+// An uncommitted change is NOT a refusal. A merge or a fast-forward only fails
+// when what is coming in touches a file you have edited, and git says so
+// plainly when it does — being told "commit first" while holding an edit to an
+// unrelated file is a wrong answer. A rebase does want a clean tree, and that
+// is a reason to set the changes aside and put them back (rebaseWithStash),
+// not a reason to refuse.
 func pullable(rr RemoteRepo) (bool, string, string) {
 	switch {
 	case rr.Detached:
-		return false, "detached HEAD: nothing to pull into", ""
+		return false, "a detached HEAD is a commit, not a branch: check one out to pull into", ""
 	case rr.Upstream == "":
 		return false, "no upstream to pull from", ""
 	case rr.Behind == 0:
 		return false, "already up to date", ""
-	case rr.Dirty > 0:
-		return false, "uncommitted changes: commit or discard them first", ""
 	case rr.Ahead == 0:
 		return true, "", "ff"
 	}
@@ -378,13 +442,20 @@ func doRemote(t subRepo, rr RemoteRepo, action, remote string) RepoResult {
 			}
 			return RepoResult{Repo: t.Name, Detail: why}
 		}
+
+		if action == "rebase" {
+			// a rebase wants a clean tree; getting one is this function's job
+			detail, err := rebaseWithStash(t.Path, rr.Upstream)
+			if err != nil {
+				return RepoResult{Repo: t.Name, Detail: err.Error()}
+			}
+			res.Ok, res.Detail = true, detail
+			return res
+		}
 		args := []string{"merge", "--ff-only", rr.Upstream}
-		switch action {
-		case "merge":
+		if action == "merge" {
 			// --no-ff is not forced: when it can fast-forward, it should
 			args = []string{"merge", rr.Upstream}
-		case "rebase":
-			args = []string{"rebase", rr.Upstream}
 		}
 		// no autostash and no strategy flags: a conflict should stop and be
 		// dealt with in a terminal, not be papered over from a dashboard

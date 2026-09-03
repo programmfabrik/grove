@@ -118,9 +118,10 @@ export function RemoteBar({ name, onChanged }: { name: string; onChanged: () => 
 
   // which ways in are actually available here, and which one grove will stand
   // behind. Nothing of ours on top is the only case with one right answer.
-  const offered = repo.can_pull
-    ? WAYS.filter((w) => w.mode !== 'ff' || repo.ahead === 0)
-    : []
+  // a fast-forward is the only one that is genuinely impossible with commits
+  // of your own on top; a rebase over uncommitted work is a thing grove can do
+  // rather than a thing to refuse
+  const offered = repo.can_pull ? WAYS.filter((w) => w.mode !== 'ff' || repo.ahead === 0) : []
   const advised = repo.ahead === 0 ? 'ff' : repo.pull_mode || ''
 
   const act = (action: Action) => {
@@ -144,7 +145,7 @@ export function RemoteBar({ name, onChanged }: { name: string; onChanged: () => 
   return (
     <div className="rb">
       <div className="rb-row">
-        <span className="rb-split">
+        <span className={repo.can_push ? 'rb-split on' : 'rb-split'}>
           <button
             className="btn-ghost rb-go"
             disabled={!repo.can_push || busy !== null}
@@ -152,7 +153,7 @@ export function RemoteBar({ name, onChanged }: { name: string; onChanged: () => 
             title={repo.can_push ? `Fetch, then push ${repo.name} to ${pushTo}` : repo.blocked || 'nothing to push'}
           >
             {busy === 'push' ? 'Pushing…' : `Push ${which}`}
-            {repo.ahead > 0 && <span className="rb-n"> {repo.ahead}</span>}
+            {repo.ahead > 0 && <span className="rb-n">↑ {repo.ahead}</span>}
           </button>
           <button
             className={menu === 'push' ? 'btn-ghost rb-caret on' : 'btn-ghost rb-caret'}
@@ -180,7 +181,7 @@ export function RemoteBar({ name, onChanged }: { name: string; onChanged: () => 
           )}
         </span>
 
-        <span className="rb-split">
+        <span className={repo.can_pull ? 'rb-split on' : 'rb-split'}>
           <button
             className="btn-ghost rb-go"
             disabled={!repo.can_pull || busy !== null}
@@ -188,7 +189,7 @@ export function RemoteBar({ name, onChanged }: { name: string; onChanged: () => 
             title={repo.can_pull ? `Bring in ${repo.behind} from ${repo.upstream}` : repo.pull_blocked || 'already up to date'}
           >
             {busy && busy !== 'push' ? 'Pulling…' : `Pull ${which}`}
-            {repo.behind > 0 && <span className="rb-n"> {repo.behind}</span>}
+            {repo.behind > 0 && <span className="rb-n">↓ {repo.behind}</span>}
           </button>
           <button
             className={menu === 'pull' ? 'btn-ghost rb-caret on' : 'btn-ghost rb-caret'}
@@ -204,12 +205,6 @@ export function RemoteBar({ name, onChanged }: { name: string; onChanged: () => 
           )}
         </span>
       </div>
-
-      {!repo.can_push && repo.blocked && !repo.detached && !busy && (
-        <div className="rb-note dim">
-          <span className="mono">{repo.name}</span> — {repo.blocked}
-        </div>
-      )}
 
       {results && (
         <div className="rb-note">
@@ -277,7 +272,22 @@ function HowToPull({
                   {w.label}
                   {w.mode === advised && <span className="rb-advised">suggested</span>}
                 </span>
-                <span className="rb-way-what dim">{w.what}</span>
+                <span className="rb-way-what dim">
+                  {w.what}
+                  {/* a rebase wants a clean tree, so say what will be done to
+                      get one rather than refusing over it */}
+                  {w.mode === 'rebase' && repo.dirty > 0 && (
+                    <>
+                      {' '}
+                      <b>
+                        Your {repo.dirty} uncommitted change{repo.dirty === 1 ? '' : 's'} will be stashed,
+                        the rebase run, and the stash popped back on top. If any of that will not go
+                        through, everything is put back exactly as it is now — there is no half-done
+                        state to land in.
+                      </b>
+                    </>
+                  )}
+                </span>
               </label>
             ))}
           </div>
@@ -311,9 +321,19 @@ function RepoPicker({
         <label
           key={r.name}
           className={r.detached ? 'rb-pop-row rb-detached' : 'rb-pop-row'}
-          title={r.blocked || r.pull_blocked || ''}
+          title={
+            r.detached
+              ? `${r.name} is at a commit rather than on a branch, which is how a submodule is normally checked out. There is nothing to push and nothing to pull into — check out a branch in it first.`
+              : r.blocked || r.pull_blocked || ''
+          }
         >
-          <input type="radio" name="rb-repo" checked={pick === r.name} onChange={() => onPick(r.name)} />
+          <input
+            type="radio"
+            name="rb-repo"
+            disabled={r.detached}
+            checked={pick === r.name}
+            onChange={() => onPick(r.name)}
+          />
           <span className="mono">{r.name}</span>
           <span className="dim">{r.detached ? 'detached' : r.branch}</span>
           <span className="rb-num">

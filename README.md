@@ -510,6 +510,22 @@ is marked *suggested* when the situation has a right answer:
 | nothing of yours on top | **fast-forward** — one right answer, no history rewritten, no merge commit for work that does not exist |
 | your commits on top | **rebase**, while they are still yours alone. Merge is right once anybody else has them, and grove cannot tell which, so it says so rather than pretending |
 
+**Uncommitted work does not stop any of it.** A merge or a fast-forward only
+fails when what is coming in touches a file you have edited, and git says so
+plainly when it does — being told "commit first" while holding an edit to an
+unrelated file is a wrong answer. A rebase genuinely does want a clean tree, so
+grove gets one: the changes are stashed, the rebase runs, the stash is popped
+back on top, and the dialog says as much before you agree to it.
+
+That sequence has three steps that can fail, and a half-finished one is worse
+than not having started — a branch rebased under you and a stash to reconcile
+by hand is not a state anybody asked to be in. So every step is followed by the
+one that undoes it: a rebase that stops is aborted and the changes handed back;
+a stash that will not reapply undoes the rebase too, putting HEAD and the
+working tree exactly where they were. There are two outcomes and no third. The
+one thing that is never done is discarding the changes — if they will not come
+back cleanly they stay in the stash and the message says so.
+
 **Fetching happens on its own** while a checkout is open, which is what lets
 any of these numbers mean anything. Every five seconds is the aim and not
 always the outcome: a round over four repositories on a real remote measured

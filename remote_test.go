@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -85,7 +86,7 @@ func TestPushableRefusals(t *testing.T) {
 		rr   RemoteRepo
 		want string
 	}{
-		{"detached", RemoteRepo{Detached: true}, "detached HEAD: no branch to push"},
+		{"detached", RemoteRepo{Detached: true}, "a detached HEAD is a commit, not a branch: nothing to push"},
 		{"behind", RemoteRepo{Branch: "b", Upstream: "origin/b", Behind: 3, Ahead: 1},
 			"origin/b is 3 ahead: rebase or merge first"},
 		{"nothing to push", RemoteRepo{Branch: "b", Upstream: "origin/b"}, "nothing to push"},
@@ -191,10 +192,10 @@ func TestPushAndRebaseAgainstARealRemote(t *testing.T) {
 	}
 }
 
-// A dirty tree is not something to rebase over somebody's back — and the case
-// only arises when there is something to pull, since otherwise "nothing to do"
-// is the honest answer whatever the tree looks like.
-func TestRebaseRefusesADirtyTree(t *testing.T) {
+// A dirty tree is not a refusal. The case only arises when there is something
+// to pull at all, since otherwise "nothing to do" is the honest answer
+// whatever the tree looks like.
+func TestADirtyTreeCanStillPull(t *testing.T) {
 	requireGit(t)
 	dir := t.TempDir()
 	remote := filepath.Join(dir, "origin.git")
@@ -216,13 +217,109 @@ func TestRebaseRefusesADirtyTree(t *testing.T) {
 	write(t, work, "a.txt", "changed but not committed\n")
 
 	rr := readRemote(work)
-	if ok, why, _ := pullable(rr); ok {
-		t.Errorf("a dirty tree was offered a pull: %q", why)
+	// A dirty tree does not stop a pull, and no longer stops a rebase either:
+	// the changes are set aside and put back.
+	ok, _, _ := pullable(rr)
+	if !ok {
+		t.Error("a dirty tree was refused a pull it could have had")
 	}
+	// the fast-forward it can have goes through, edit and all
+	if res := doRemote(subRepo{Name: "work", Path: work}, rr, "ff", ""); !res.Ok {
+		t.Errorf("a fast-forward past an unrelated edit was refused: %s", res.Detail)
+	}
+	if out, _ := git(work, "status", "--porcelain"); !strings.Contains(out, "a.txt") {
+		t.Errorf("the uncommitted edit did not survive the pull: %q", out)
+	}
+}
+
+// A rebase over uncommitted work: set aside, rebase, put back — and the
+// changes are still there afterwards, on top of the new history.
+func TestRebaseCarriesUncommittedWorkOver(t *testing.T) {
+	requireGit(t)
+	work, _ := twoWaysApart(t, "keep.txt", "theirs\n")
+	write(t, work, "wip.txt", "work in progress\n") // untracked, and in nobody's way
+
+	rr := readRemote(work)
 	res := doRemote(subRepo{Name: "work", Path: work}, rr, "rebase", "")
-	if res.Ok || !strings.Contains(res.Detail, "uncommitted") {
-		t.Errorf("a dirty tree was rebased: %+v", res)
+	if !res.Ok {
+		t.Fatalf("the rebase was refused: %s", res.Detail)
 	}
+	if got, _ := os.ReadFile(filepath.Join(work, "wip.txt")); string(got) != "work in progress\n" {
+		t.Errorf("the uncommitted file did not come back: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(work, "keep.txt")); err != nil {
+		t.Error("their commit is not here, so the rebase did not happen")
+	}
+	if out, _ := git(work, "stash", "list"); out != "" {
+		t.Errorf("a stash was left behind: %q", out)
+	}
+	if out, _ := git(work, "rev-list", "--count", "--merges", "HEAD"); out != "0" {
+		t.Errorf("a rebase made %s merge commits", out)
+	}
+}
+
+// The case worth having: the stashed work collides with what is coming in.
+// The rebase must be undone rather than left standing beside a stash nobody
+// asked for, and the working tree must be exactly where it started.
+func TestARebaseThatCannotBePutBackUndoesItself(t *testing.T) {
+	requireGit(t)
+	// they change a file, and so do we, without committing
+	work, _ := twoWaysApart(t, "shared.txt", "theirs\n")
+	write(t, work, "shared.txt", "mine, uncommitted\n")
+
+	before, _ := git(work, "rev-parse", "HEAD")
+	rr := readRemote(work)
+	res := doRemote(subRepo{Name: "work", Path: work}, rr, "rebase", "")
+	if res.Ok {
+		t.Fatal("a rebase that could not be put back reported success")
+	}
+	if !strings.Contains(res.Detail, "undone") {
+		t.Errorf("the message does not say it was undone: %q", res.Detail)
+	}
+
+	after, _ := git(work, "rev-parse", "HEAD")
+	if after != before {
+		t.Errorf("HEAD moved: %s -> %s", before, after)
+	}
+	got, err := os.ReadFile(filepath.Join(work, "shared.txt"))
+	if err != nil || string(got) != "mine, uncommitted\n" {
+		t.Errorf("the uncommitted edit is not where it was: %q (%v)", got, err)
+	}
+	if out, _ := git(work, "status", "--porcelain"); !strings.Contains(out, "shared.txt") {
+		t.Errorf("the tree is not dirty any more, so the edit was lost: %q", out)
+	}
+	// no half-finished rebase left lying about
+	if out, _ := git(work, "rev-parse", "--git-path", "rebase-merge"); out != "" {
+		if _, err := os.Stat(out); err == nil {
+			t.Error("a rebase is still in progress")
+		}
+	}
+}
+
+// twoWaysApart returns a clean checkout that is one commit behind its upstream
+// and one ahead of it, with the remote's commit touching the named file.
+func twoWaysApart(t testing.TB, name, theirs string) (work, remote string) {
+	t.Helper()
+	dir := t.TempDir()
+	remote = filepath.Join(dir, "origin.git")
+	gitRun(t, dir, "init", "-q", "--bare", "-b", "main", remote)
+	work = initRepo(t, filepath.Join(dir, "work"))
+	gitRun(t, work, "remote", "add", "origin", remote)
+	gitRun(t, work, "push", "-q", "-u", "origin", "main")
+
+	other := filepath.Join(dir, "other")
+	gitRun(t, dir, "clone", "-q", remote, other)
+	identify(t, other)
+	write(t, other, name, theirs)
+	gitRun(t, other, "add", name)
+	gitRun(t, other, "commit", "-q", "-m", "theirs")
+	gitRun(t, other, "push", "-q", "origin", "main")
+
+	write(t, work, "ours.txt", "ours\n")
+	gitRun(t, work, "add", "ours.txt")
+	gitRun(t, work, "commit", "-q", "-m", "ours")
+	gitRun(t, work, "fetch", "-q", "origin")
+	return work, remote
 }
 
 // Which way in grove suggests, and why.
@@ -238,7 +335,10 @@ func TestPullModeFitsWhereTheBranchStands(t *testing.T) {
 			RemoteRepo{Branch: "b", Upstream: "origin/b", Behind: 3}, true, "ff"},
 		{"ours on top — keep it linear",
 			RemoteRepo{Branch: "b", Upstream: "origin/b", Behind: 3, Ahead: 2}, true, "rebase"},
-		{"dirty", RemoteRepo{Branch: "b", Upstream: "origin/b", Behind: 1, Dirty: 4}, false, ""},
+		{"dirty, ours on top — still rebase: the changes are stashed and put back",
+			RemoteRepo{Branch: "b", Upstream: "origin/b", Behind: 1, Ahead: 1, Dirty: 4}, true, "rebase"},
+		{"dirty, nothing of ours — a fast-forward is still fine",
+			RemoteRepo{Branch: "b", Upstream: "origin/b", Behind: 1, Dirty: 4}, true, "ff"},
 		{"detached", RemoteRepo{Detached: true, Behind: 1}, false, ""},
 		{"no upstream", RemoteRepo{Branch: "b", Remote: "origin", Behind: 1}, false, ""},
 	} {
