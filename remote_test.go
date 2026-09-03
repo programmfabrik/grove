@@ -413,3 +413,97 @@ func TestANestedSubmoduleStopsItsOwnParent(t *testing.T) {
 	}
 	_ = leaf
 }
+
+// The failure Martin hit, which reached the screen as "exit status 1".
+//
+// A submodule sitting at a different commit than the parent records leaves the
+// parent modified, and `git stash` cannot clean that: it stores the recorded
+// pointer and leaves the submodule's own checkout where it is. So the tree is
+// still dirty after stashing and the rebase refuses — for a reason worth
+// saying out loud rather than a status code.
+func TestASubmoduleAtAnotherCommitStopsTheRebaseAndSaysWhy(t *testing.T) {
+	requireGit(t)
+	dir := t.TempDir()
+	subRemote := filepath.Join(dir, "sub.git")
+	topRemote := filepath.Join(dir, "top.git")
+	for _, r := range []string{subRemote, topRemote} {
+		gitRun(t, dir, "init", "-q", "--bare", "-b", "main", r)
+	}
+	sub := initRepo(t, filepath.Join(dir, "sub"))
+	gitRun(t, sub, "remote", "add", "origin", subRemote)
+	gitRun(t, sub, "push", "-q", "-u", "origin", "main")
+	// a second commit the submodule can be moved back to
+	write(t, sub, "two.txt", "two\n")
+	gitRun(t, sub, "add", "two.txt")
+	gitRun(t, sub, "commit", "-q", "-m", "second")
+	gitRun(t, sub, "push", "-q", "origin", "main")
+
+	top := initRepo(t, filepath.Join(dir, "top"))
+	gitRun(t, top, "remote", "add", "origin", topRemote)
+	gitRun(t, top, "-c", "protocol.file.allow=always", "submodule", "add", "-q", subRemote, "vendor/sub")
+	gitRun(t, top, "commit", "-q", "-m", "add submodule")
+	gitRun(t, top, "push", "-q", "-u", "origin", "main")
+	subIn := filepath.Join(top, "vendor", "sub")
+	identify(t, subIn)
+
+	// somebody moves the parent's branch on, so there is something to rebase onto
+	other := filepath.Join(dir, "other")
+	gitRun(t, dir, "clone", "-q", topRemote, other)
+	identify(t, other)
+	write(t, other, "theirs.txt", "theirs\n")
+	gitRun(t, other, "add", "theirs.txt")
+	gitRun(t, other, "commit", "-q", "-m", "theirs")
+	gitRun(t, other, "push", "-q", "origin", "main")
+	gitRun(t, top, "fetch", "-q", "origin")
+
+	// and the submodule is moved back one, without committing the parent
+	gitRun(t, subIn, "checkout", "-q", "HEAD~1")
+
+	if out, _ := git(top, "status", "--porcelain"); !strings.Contains(out, "vendor/sub") {
+		t.Fatalf("the fixture is not in the state under test: %q", out)
+	}
+	before, _ := git(top, "rev-parse", "HEAD")
+
+	res := doRemote(subRepo{Name: "top", Path: top}, readRemote(top), "rebase", "")
+	if res.Ok {
+		t.Fatal("the rebase reported success over a tree a stash cannot clean")
+	}
+	if !strings.Contains(res.Detail, "still uncommitted after stashing") {
+		t.Errorf("detail does not name the problem: %q", res.Detail)
+	}
+	if !strings.Contains(res.Why, "submodule") || !strings.Contains(res.Why, "vendor/sub") {
+		t.Errorf("the explanation does not name the submodule: %q", res.Why)
+	}
+	if res.Git == "" {
+		t.Error("git's own words were dropped")
+	}
+	// and nothing moved
+	if after, _ := git(top, "rev-parse", "HEAD"); after != before {
+		t.Errorf("HEAD moved: %s -> %s", before, after)
+	}
+	if out, _ := git(top, "stash", "list"); out != "" {
+		t.Errorf("a stash was left behind: %q", out)
+	}
+	if out, _ := git(top, "status", "--porcelain"); !strings.Contains(out, "vendor/sub") {
+		t.Errorf("the submodule is no longer where it was: %q", out)
+	}
+}
+
+// A failure must carry what git said. Output() keeps stderr on the ExitError
+// and throws it away everywhere else, which is how a rebase that stopped for a
+// nameable reason arrived on screen as "exit status 1".
+func TestGitFailuresCarryGitsWords(t *testing.T) {
+	requireGit(t)
+	repo := initRepo(t, filepath.Join(t.TempDir(), "r"))
+	_, err := git(repo, "rev-parse", "--verify", "refs/heads/nope")
+	if err == nil {
+		t.Fatal("expected a failure")
+	}
+	if strings.Contains(err.Error(), "exit status") {
+		t.Errorf("the error is a status code and nothing else: %q", err)
+	}
+	out, err := gitSays(repo, "checkout", "no-such-branch")
+	if err == nil || out == "" {
+		t.Errorf("gitSays lost what git said: %q (%v)", out, err)
+	}
+}

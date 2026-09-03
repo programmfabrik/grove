@@ -117,4 +117,4 @@ export type RemoteRepo = {
   fetched_at?: string
 }
 export type RemoteState = { name: string; repo?: string; repos: RemoteRepo[] }
-export type RemoteResult = { repo: string; ok: boolean; detail?: string }
+export type RemoteResult = { repo: string; ok: boolean; detail?: string; git?: string; why?: string }

@@ -155,10 +155,13 @@ func remoteRepos(c Checkout) []RemoteRepo {
 //
 // The one thing that cannot be undone is losing them, so they stay in the
 // stash if they will not come back cleanly, and the message says so.
-func rebaseWithStash(root, upstream string) (string, error) {
+func rebaseWithStash(name, root, upstream string) RepoResult {
+	fail := func(detail, out, why string) RepoResult {
+		return RepoResult{Repo: name, Detail: detail, Git: out, Why: why}
+	}
 	start, err := git(root, "rev-parse", "HEAD")
 	if err != nil {
-		return "", fmt.Errorf("cannot read HEAD: %w", err)
+		return fail("cannot read HEAD", err.Error(), "")
 	}
 
 	dirty, _ := git(root, "status", "--porcelain", "-uall")
@@ -166,39 +169,117 @@ func rebaseWithStash(root, upstream string) (string, error) {
 	if dirty != "" {
 		// --include-untracked: a file you have not added can still be in the
 		// way of one the rebase wants to create
-		if out, err := git(root, "stash", "push", "--include-untracked",
-			"-m", "grove: rebasing onto "+upstream); err != nil {
-			return "", fmt.Errorf("could not set your changes aside, so nothing was done: %v %s", err, out)
+		out, err := gitSays(root, "stash", "push", "--include-untracked",
+			"-m", "grove: rebasing onto "+upstream)
+		if err != nil {
+			return fail("could not set your changes aside, so nothing was done", out, "")
 		}
 		stashed = true
 	}
 
-	if out, err := git(root, "rebase", upstream); err != nil {
-		// back to where we started, and hand the changes back
-		git(root, "rebase", "--abort")
+	// A stash does not always leave a clean tree, and a rebase will not start
+	// without one. A submodule whose checkout sits at a different commit than
+	// the parent records is the case that matters here: git stashes the
+	// gitlink and leaves the submodule's own checkout where it is, so the
+	// parent is still modified and no amount of stashing will change that.
+	if left, _ := git(root, "status", "--porcelain"); left != "" {
 		if stashed {
-			git(root, "stash", "pop")
+			gitSays(root, "stash", "pop")
 		}
-		return "", fmt.Errorf("the rebase stopped and was undone — nothing changed: %v %s", err, out)
+		return fail("still uncommitted after stashing, so the rebase was not started", left,
+			whyStillDirty(root, left))
+	}
+
+	if out, err := gitSays(root, "rebase", upstream); err != nil {
+		// back to where we started, and hand the changes back
+		gitSays(root, "rebase", "--abort")
+		if stashed {
+			gitSays(root, "stash", "pop")
+		}
+		return fail("the rebase stopped and was undone — nothing changed", out, whyRebaseFailed(out))
 	}
 
 	if !stashed {
-		return "rebased onto " + upstream, nil
+		return RepoResult{Repo: name, Ok: true, Detail: "rebased onto " + upstream}
 	}
 
-	if out, err := git(root, "stash", "pop"); err != nil {
+	if out, err := gitSays(root, "stash", "pop"); err != nil {
 		// The rebase worked and the changes will not sit on top of it. A
 		// rebased branch plus a stash nobody asked for is exactly the
 		// in-between state this exists to avoid, so put it all back.
-		git(root, "reset", "--hard", start)
-		if _, again := git(root, "stash", "pop"); again != nil {
-			return "", fmt.Errorf("your changes conflict with %s. The rebase was undone and they are "+
-				"waiting in the stash — `git stash pop` when you are ready: %v %s", upstream, err, out)
+		gitSays(root, "reset", "--hard", start)
+		if _, again := gitSays(root, "stash", "pop"); again != nil {
+			return fail("your changes conflict with "+upstream+"; the rebase was undone and they are waiting in the stash", out,
+				"Run `git stash pop` when you have decided what to keep. Nothing was lost — the stash still holds every change you had.")
 		}
-		return "", fmt.Errorf("your changes conflict with %s, so the rebase was undone "+
-			"and nothing changed: %v %s", upstream, err, out)
+		return fail("your changes conflict with "+upstream+", so the rebase was undone and nothing changed", out,
+			"The same lines were edited on both sides. Commit your work first and rebase after, so git can show you the conflict as a conflict rather than refusing to start.")
 	}
-	return "rebased onto " + upstream + ", your changes back on top", nil
+	return RepoResult{Repo: name, Ok: true, Detail: "rebased onto " + upstream + ", your changes back on top"}
+}
+
+// whyStillDirty explains a tree that a stash could not clean. Every entry in
+// `status --porcelain` for a submodule path is one git will not let a rebase
+// past and will not stash away either.
+func whyStillDirty(root, status string) string {
+	var subs []string
+	for _, line := range strings.Split(status, "\n") {
+		if len(line) < 4 {
+			continue
+		}
+		path := strings.TrimSpace(line[2:])
+		if _, err := os.Stat(filepath.Join(root, path, ".git")); err == nil {
+			subs = append(subs, path)
+		}
+	}
+	if len(subs) == 0 {
+		return "Something changed the working tree between the stash and the check. Nothing was done to it."
+	}
+	return plural(len(subs), "The submodule ", "The submodules ") + strings.Join(subs, ", ") +
+		plural(len(subs), " sits", " sit") + " at a different commit than this repository records. " +
+		"git stashes the recorded pointer and leaves the submodule's own checkout alone, so the tree " +
+		"stays modified and a rebase will not start. Either commit the " +
+		plural(len(subs), "new pointer", "new pointers") +
+		", or put the submodule back with `git submodule update`."
+}
+
+// whyRebaseFailed reads git's refusal and says the same thing in fewer words,
+// where grove recognises it.
+func whyRebaseFailed(out string) string {
+	switch {
+	case strings.Contains(out, "unstaged changes"):
+		return "git will not rebase over uncommitted work. Everything grove could stash was stashed, so what is left is something a stash does not cover — a submodule at a different commit is the usual one."
+	case strings.Contains(out, "CONFLICT") || strings.Contains(out, "could not apply"):
+		return "Your commits and theirs edit the same lines. The rebase was undone; resolving this needs a terminal, where git can walk you through each conflict."
+	case strings.Contains(out, "cannot rebase onto multiple branches"):
+		return "The upstream does not name a single branch to rebase onto."
+	}
+	return ""
+}
+
+func whyMergeFailed(out string) string {
+	switch {
+	case strings.Contains(out, "local changes") || strings.Contains(out, "would be overwritten"):
+		return "What is coming in changes files you have edited but not committed. Commit or set those aside first — the rest of your work is untouched either way."
+	case strings.Contains(out, "CONFLICT"):
+		return "The same lines were edited on both sides. The merge is half-done in the working tree; finish or abandon it in a terminal (`git merge --abort`)."
+	case strings.Contains(out, "Not possible to fast-forward"):
+		return "Your branch has commits the upstream does not, so it cannot simply move forward. Rebase or merge instead."
+	}
+	return ""
+}
+
+func whyPushFailed(out string) string {
+	switch {
+	case strings.Contains(out, "non-fast-forward") || strings.Contains(out, "fetch first") ||
+		strings.Contains(out, "behind its remote"):
+		return "The remote moved between the fetch and the push. Pull, then push again — grove will not force anything over it."
+	case strings.Contains(out, "Permission denied") || strings.Contains(out, "Authentication failed"):
+		return "The remote refused your credentials. grove pushes as you do from a terminal, so whatever works there is what is missing here."
+	case strings.Contains(out, "protected branch") || strings.Contains(out, "pre-receive hook declined"):
+		return "The remote itself refused the push — a protected branch or a server-side hook. Nothing local is wrong."
+	}
+	return ""
 }
 
 func pastTense(action string) string {
@@ -356,9 +437,15 @@ type remoteRequest struct {
 
 // RepoResult is what one repository did, or would not.
 type RepoResult struct {
-	Repo   string `json:"repo"`
-	Ok     bool   `json:"ok"`
+	Repo string `json:"repo"`
+	Ok   bool   `json:"ok"`
+	// Detail is the one-line answer. Git is what git itself said, kept whole,
+	// because a person reading a failure needs the words of the program that
+	// refused rather than a paraphrase. Why is grove's own explanation, on the
+	// failures it recognises.
 	Detail string `json:"detail,omitempty"`
+	Git    string `json:"git,omitempty"`
+	Why    string `json:"why,omitempty"`
 }
 
 func (d *grove) handleRemoteAction(w http.ResponseWriter, r *http.Request) {
@@ -399,9 +486,9 @@ func (d *grove) handleRemoteAction(w http.ResponseWriter, r *http.Request) {
 	all := diffRepos(c)
 	results := make([]RepoResult, 0, len(all))
 	for _, s := range all {
-		if out, err := git(s.Path, "fetch", "--prune"); err != nil {
+		if out, err := gitSays(s.Path, "fetch", "--prune"); err != nil {
 			results = append(results, RepoResult{Repo: s.Name,
-				Detail: fmt.Sprintf("git fetch: %v %s", err, out)})
+				Detail: "could not reach the remote", Git: out})
 		}
 	}
 
@@ -445,12 +532,7 @@ func doRemote(t subRepo, rr RemoteRepo, action, remote string) RepoResult {
 
 		if action == "rebase" {
 			// a rebase wants a clean tree; getting one is this function's job
-			detail, err := rebaseWithStash(t.Path, rr.Upstream)
-			if err != nil {
-				return RepoResult{Repo: t.Name, Detail: err.Error()}
-			}
-			res.Ok, res.Detail = true, detail
-			return res
+			return rebaseWithStash(t.Name, t.Path, rr.Upstream)
 		}
 		args := []string{"merge", "--ff-only", rr.Upstream}
 		if action == "merge" {
@@ -459,8 +541,13 @@ func doRemote(t subRepo, rr RemoteRepo, action, remote string) RepoResult {
 		}
 		// no autostash and no strategy flags: a conflict should stop and be
 		// dealt with in a terminal, not be papered over from a dashboard
-		if out, err := git(t.Path, args...); err != nil {
-			return RepoResult{Repo: t.Name, Detail: fmt.Sprintf("git %s: %v %s", strings.Join(args, " "), err, out)}
+		if out, err := gitSays(t.Path, args...); err != nil {
+			return RepoResult{
+				Repo:   t.Name,
+				Detail: "git " + strings.Join(args, " ") + " did not go through",
+				Git:    out,
+				Why:    whyMergeFailed(out),
+			}
 		}
 		res.Ok, res.Detail = true, pastTense(action)+" "+rr.Upstream
 		return res
@@ -481,8 +568,13 @@ func doRemote(t subRepo, rr RemoteRepo, action, remote string) RepoResult {
 		if rr.Upstream == "" || (remote != "" && !strings.HasPrefix(rr.Upstream, to+"/")) {
 			args = append(args, "--set-upstream", to, rr.Branch)
 		}
-		if out, err := git(t.Path, args...); err != nil {
-			return RepoResult{Repo: t.Name, Detail: fmt.Sprintf("git push: %v %s", err, out)}
+		if out, err := gitSays(t.Path, args...); err != nil {
+			return RepoResult{
+				Repo:   t.Name,
+				Detail: "the push did not go through",
+				Git:    out,
+				Why:    whyPushFailed(out),
+			}
 		}
 		where := rr.Upstream
 		if remote != "" {

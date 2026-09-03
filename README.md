@@ -517,6 +517,12 @@ unrelated file is a wrong answer. A rebase genuinely does want a clean tree, so
 grove gets one: the changes are stashed, the rebase runs, the stash is popped
 back on top, and the dialog says as much before you agree to it.
 
+One thing a stash cannot clean is a submodule sitting at a different commit
+than the parent records: git stashes the recorded pointer and leaves the
+submodule's own checkout alone, so the tree stays modified and the rebase will
+not start. grove checks after stashing rather than after failing, hands the
+changes straight back, and says which submodule and what the two cures are.
+
 That sequence has three steps that can fail, and a half-finished one is worse
 than not having started — a branch rebased under you and a stash to reconcile
 by hand is not a state anybody asked to be in. So every step is followed by the
@@ -525,6 +531,15 @@ a stash that will not reapply undoes the rebase too, putting HEAD and the
 working tree exactly where they were. There are two outcomes and no third. The
 one thing that is never done is discarding the changes — if they will not come
 back cleanly they stay in the stash and the message says so.
+
+**When something does not go through**, it goes in a dialog rather than under
+the buttons — a line of red in the head pushes the layout around and still has
+room for none of what happened. The dialog carries grove's explanation where it
+recognises the failure, and git's own words either way, because git explains
+itself better than any paraphrase and the person reading has to act on it. A
+failure that carried nothing but `exit status 1` was a bug of exactly this
+kind: `cmd.Output()` keeps stderr on the error and throws it away everywhere
+else, so the reason git gave never reached the screen.
 
 **Fetching happens on its own** while a checkout is open, which is what lets
 any of these numbers mean anything. Every five seconds is the aim and not

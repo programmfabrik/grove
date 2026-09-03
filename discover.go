@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -238,12 +240,31 @@ func installHint() string {
 }
 
 // git runs a git command in dir and returns its trimmed stdout.
+//
+// A failure carries what git said about it. Output() keeps stderr on the
+// ExitError and throws it away everywhere else, which is how a rebase that
+// stopped for a nameable reason reached the screen as "exit status 1".
 func git(dir string, args ...string) (string, error) {
 	cmd := exec.Command(gitExe, args...)
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && len(bytes.TrimSpace(ee.Stderr)) > 0 {
+			return "", fmt.Errorf("%s", strings.TrimSpace(string(ee.Stderr)))
+		}
 		return "", err
 	}
 	return strings.TrimRight(string(out), "\n"), nil
+}
+
+// gitSays runs a git command and returns everything it said, stdout and stderr
+// together, whether it worked or not. The commands that CHANGE something are
+// read by a person when they go wrong, and git explains itself far better than
+// any message grove could invent for it.
+func gitSays(dir string, args ...string) (string, error) {
+	cmd := exec.Command(gitExe, args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	return strings.TrimRight(string(out), "\n"), err
 }
