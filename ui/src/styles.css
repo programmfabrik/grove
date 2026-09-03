@@ -772,3 +772,32 @@ a { color: var(--accent-ink); }
   border-left: 3px solid var(--danger); background: color-mix(in srgb, var(--danger) 7%, transparent);
 }
 .run-safe { margin: 12px 0 0; font-size: 12px; }
+
+/* ── the check dot ───────────────────────────────────────────────────── */
+/* Whether GitHub is testing what this checkout pushed. Nothing is drawn when
+   grove could not ask — an empty space is honest, and a grey dot would claim
+   GitHub had answered. */
+.ci { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block; }
+.ci-success { background: var(--running); }
+.ci-failure { background: var(--danger); }
+.ci-pending { background: var(--warn); animation: ci-run 1.4s ease-in-out infinite; }
+@keyframes ci-run { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+
+/* ── settings ────────────────────────────────────────────────────────── */
+.set-facts { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 12.5px; margin-bottom: 6px; }
+.set-dir { flex-basis: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-h { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); margin: 20px 0 8px; }
+.set-tool { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.set-tool + .set-tool { margin-top: 8px; }
+.set-tool-gone { border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); background: color-mix(in srgb, var(--warn) 5%, transparent); }
+.set-tool-head { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.set-mark { font-weight: 700; }
+.set-ok { color: var(--running); }
+.set-no { color: var(--warn); }
+.set-name { font-weight: 600; }
+.set-tag { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); border: 1px solid var(--border); border-radius: 99px; padding: 0 6px; }
+.set-tag-warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+.set-path { font-size: 11px; margin-top: 3px; }
+.set-what { font-size: 12.5px; line-height: 1.5; margin: 6px 0 0; }
+.set-lost { font-size: 12.5px; line-height: 1.5; margin: 6px 0 0; color: var(--warn); }
+.set-bad { color: var(--danger); font-size: 13px; }

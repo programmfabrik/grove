@@ -128,3 +128,25 @@ export type JobState = {
   results?: RemoteResult[]
   repos?: RemoteRepo[]
 }
+
+// What GitHub says about the commit a checkout has pushed. See checks.go.
+export type CheckRun = { name: string; status: string; conclusion?: string }
+export type Checks = { state: 'success' | 'pending' | 'failure' | 'none'; total: number; runs?: CheckRun[] }
+
+// What grove is standing on, and what it is missing. See diagnostics.go.
+export type Tool = {
+  name: string
+  found: boolean
+  path?: string
+  version?: string
+  needed: string
+  missing?: string
+  required?: boolean
+}
+export type Diagnostics = {
+  version: string
+  platform: string
+  dir: string
+  tools: Tool[]
+  github: { from?: string; working: boolean; detail: string }
+}

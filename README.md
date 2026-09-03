@@ -575,6 +575,42 @@ however long the last one took. Quick remotes get the five seconds; slow ones
 settle at spending a third of the time fetching and the rest leaving the remote
 alone. A window nobody is looking at fetches nothing.
 
+## Is what you pushed passing?
+
+The worktree list carries one dot per checkout: green if GitHub's checks on the
+pushed commit passed, amber and pulsing while they run, red if any failed. The
+worst state wins, because the dot has room for one word and a green one beside
+a failed job is the lie a dashboard exists to prevent. Hovering names every run
+and what became of it.
+
+It asks about the commit the **remote** has, not the one on disk — "is what I
+pushed being tested" is the question, and a commit nobody has seen is not being
+tested by anybody. A checkout with no upstream has no dot, and neither does one
+whose commit GitHub has never run anything for: nothing drawn means nothing to
+say, which is honest, where a grey dot would claim GitHub had answered.
+
+This is the one thing grove does not read from git, because git does not know
+it — a check run lives on GitHub and nowhere else. It never asks you for a
+credential. It looks for one you already have, in this order:
+
+| | |
+| --- | --- |
+| `gh auth token` | whatever `gh` is signed in as |
+| `GITHUB_TOKEN`, `GH_TOKEN` | if either is set |
+| the git credential helper | what it already holds for github.com |
+
+If none of them answers, the column stays empty and **Settings** says so along
+with what would fix it. Nothing is ever written, no scope is requested, and the
+only calls made are for commits that are already pushed.
+
+## Settings
+
+What grove is standing on, and what it is missing. grove runs other programs,
+and when one is absent a feature quietly does not happen — the check column
+stays empty and nobody is told whether that means "nothing is running" or "I
+could not ask". Settings says which: every program grove runs, whether it was
+found and at what version, what it is used for, and what goes without it.
+
 ## What the loopback port is, and is not
 
 grove binds the loopback interface, so nothing outside the machine can reach
@@ -677,6 +713,8 @@ cd ui && npm run dev
 | `revert.go` | `/api/revert` — unstage and discard |
 | `remote.go` | `/api/remote` — where each repository stands with its remote, and push, fetch, rebase, merge |
 | `job.go` | `/api/run` — a push or a pull as a transcript the page can watch while it runs |
+| `checks.go` | `/api/checks` — whether GitHub is testing what each checkout pushed |
+| `diagnostics.go` | `/api/diagnostics` — what grove is standing on, and what it is missing |
 | `paths.go` | the one spelling a path is kept in — see below |
 | `front_cli.go` | the default front door: serve it and say where it is |
 | `front_desktop.go` | `-tags desktop` — the window, its menu and the folder dialog |

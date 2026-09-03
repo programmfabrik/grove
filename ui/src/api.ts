@@ -1,4 +1,4 @@
-import type { DiffFile, JobState, RemoteResult, RemoteState, Repo, ScopeRepo, State, Update } from './types'
+import type { Checks, DiffFile, Diagnostics, JobState, RemoteResult, RemoteState, Repo, ScopeRepo, State, Update } from './types'
 
 async function j<T>(r: Response): Promise<T> {
   if (!r.ok) {
@@ -76,6 +76,12 @@ export const api = {
       `api/lines?name=${encodeURIComponent(name)}&repo=${encodeURIComponent(repo)}&scope=${encodeURIComponent(scope)}` +
         `&file=${encodeURIComponent(file)}&from=${from}&to=${to}`,
     ).then((r) => j<{ lines: string[]; from: number; total: number }>(r)),
+  // whether GitHub is testing what each checkout pushed, keyed by checkout
+  checks: (repo: string): Promise<{ checks: Record<string, Checks>; error?: string; note?: string }> =>
+    fetch(`api/checks?repo=${encodeURIComponent(repo)}`).then((r) =>
+      j<{ checks: Record<string, Checks>; error?: string; note?: string }>(r),
+    ),
+  diagnostics: (): Promise<Diagnostics> => fetch('api/diagnostics').then((r) => j<Diagnostics>(r)),
   // what is running, and whether anything newer was published
   version: (): Promise<Update> => fetch('api/version').then((r) => j<Update>(r)),
   // where every repository under a checkout stands with its remote. A read:

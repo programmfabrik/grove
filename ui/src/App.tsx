@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
-import type { Checkout, Repo, State, Update } from './types'
+import type { Checkout, Checks, Repo, State, Update } from './types'
 import { RepoList } from './components/RepoList'
 import { WorktreeList } from './components/WorktreeList'
 import { Sidebar } from './components/Sidebar'
 import { Logo } from './components/ui'
 import { UpdateNotice } from './components/UpdateNotice'
+import { Settings } from './components/Settings'
 import { fmtAgo } from './lib/format'
 import { clamp, Splitter, useStoredWidth } from './components/Splitter'
 import { PaneFilter, PaneHead, PaneRail, useFolded, useStoredFlag } from './components/Pane'
@@ -29,6 +30,10 @@ export default function App() {
   // asked once, on load. The server does the checking on its own schedule and
   // answers from what it last learned, so this never waits on the network.
   const [update, setUpdate] = useState<Update | null>(null)
+  // what GitHub says about each checkout's pushed commit, asked for the
+  // selected repository only and left alone otherwise
+  const [checks, setChecks] = useState<Record<string, Checks>>({})
+  const [showSettings, setShowSettings] = useState(false)
   useEffect(() => {
     api.version().then(setUpdate).catch(() => {})
   }, [])
@@ -135,6 +140,26 @@ export default function App() {
     }
   }
 
+  useEffect(() => {
+    if (!repo) return
+    let stop = false
+    const ask = () =>
+      api
+        .checks(repo)
+        .then((r) => {
+          if (!stop) setChecks(r.checks || {})
+        })
+        .catch(() => {})
+    ask()
+    // a run that is still going is worth asking about again; one that has
+    // finished is not going to change
+    const id = setInterval(ask, 30000)
+    return () => {
+      stop = true
+      clearInterval(id)
+    }
+  }, [repo])
+
   const checkouts = state?.checkouts ?? []
   const treeTerms = useMemo(() => parseTerms(treesQ), [treesQ])
   const shown = useMemo(
@@ -174,6 +199,9 @@ export default function App() {
 
         <div className="topbar-tools">
           {update?.available && <UpdateNotice update={update} />}
+          <button className="btn-ghost" onClick={() => setShowSettings(true)} title="what grove is standing on">
+            Settings
+          </button>
           <button className="btn-ghost" onClick={refresh} disabled={refreshing}>
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
@@ -193,6 +221,8 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
 
       {(error || state?.git_error) && <div className="error error-bar">{error || state?.git_error}</div>}
 
@@ -243,6 +273,7 @@ export default function App() {
                 base={state.base}
                 sel={checkout}
                 terms={treeTerms}
+                checks={checks}
                 onPick={(n) => {
                   setCheckout(n)
                   setDiffRepo(undefined)
