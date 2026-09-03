@@ -33,11 +33,15 @@ type Diagnostics struct {
 	Dir      string `json:"dir"`
 	Tools    []Tool `json:"tools"`
 
-	// GitHub is the credential the check column runs on, and whether it works.
+	// GitHub is the one question "is gh installed" and "do the checks work"
+	// were each answering half of.
 	GitHub struct {
-		From    string `json:"from,omitempty"`
-		Working bool   `json:"working"`
-		Detail  string `json:"detail"`
+		Tool        Tool     `json:"tool"`
+		From        string   `json:"from,omitempty"`
+		Working     bool     `json:"working"`
+		Detail      string   `json:"detail"`
+		Fix         []string `json:"fix,omitempty"`
+		Alternative string   `json:"alternative,omitempty"`
 	} `json:"github"`
 }
 
@@ -60,35 +64,66 @@ func (d *grove) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 	dg.Tools = append(dg.Tools, git)
 
-	gh := Tool{
-		Name:    "gh",
-		Needed:  "a GitHub credential, so grove can ask whether what you pushed is passing its checks. It is only ever read from — grove never signs you in or asks for a token.",
-		Missing: "the check column stays empty, unless GITHUB_TOKEN is set or your git credential helper already holds one for github.com.",
-	}
-	if p, err := exec.LookPath("gh"); err == nil {
-		gh.Found, gh.Path = true, p
-		if v, err := exec.Command(p, "--version").Output(); err == nil {
-			gh.Version = strings.TrimSpace(strings.SplitN(strings.TrimPrefix(string(v), "gh version "), "\n", 2)[0])
+	dg.Tools = append(dg.Tools, git)
+
+	ghPath, ghErr := exec.LookPath("gh")
+	ghVersion := ""
+	if ghErr == nil {
+		if v, err := exec.Command(ghPath, "--version").Output(); err == nil {
+			ghVersion = strings.TrimSpace(strings.SplitN(strings.TrimPrefix(string(v), "gh version "), "\n", 2)[0])
 		}
 	}
-	dg.Tools = append(dg.Tools, gh)
+
+	// gh and "GitHub checks" were two boxes saying overlapping halves of one
+	// thing. There is one question — can grove ask GitHub about your commits —
+	// and gh is only the commonest answer to it.
+	dg.GitHub.Tool = Tool{Name: "gh", Found: ghErr == nil, Path: ghPath, Version: ghVersion}
+	if loadSettings().NoChecks {
+		dg.GitHub.Detail = "Switched off below. grove makes no request to GitHub at all, and the branch names carry no colour."
+		writeJSON(w, http.StatusOK, dg)
+		return
+	}
 
 	tok := d.checks.token()
 	dg.GitHub.From = tok.From
 	switch {
+	case tok.Token == "" && ghErr != nil:
+		// nothing to sign in with, so say what to install first
+		dg.GitHub.Detail = "No GitHub credential, and `gh` is not installed. grove does not sign you in — it uses a credential you already have."
+		dg.GitHub.Fix = []string{
+			installGh() + "  — install the GitHub CLI",
+			"gh auth login  — sign in once; grove picks it up with no restart",
+		}
+		dg.GitHub.Alternative = "Or set GITHUB_TOKEN to a token with `repo` read access, or let your git credential helper hold one for github.com. grove looks in all three, in that order."
 	case tok.Token == "":
-		dg.GitHub.Detail = "No credential found. grove looked at `gh auth token`, then GITHUB_TOKEN and GH_TOKEN, then your git credential helper for github.com. Sign in with `gh auth login` and the check column starts working — nothing needs restarting."
+		dg.GitHub.Detail = "`gh` is installed and not signed in, and nothing else offered a credential."
+		dg.GitHub.Fix = []string{"gh auth login  — sign in once; grove picks it up with no restart"}
+		dg.GitHub.Alternative = "Or set GITHUB_TOKEN, or let your git credential helper hold one for github.com."
 	default:
 		// prove it rather than assume it: a token that is present and refused
 		// looks exactly like one that works until something asks
 		if err := pingGitHub(r.Context(), tok.Token); err != nil {
 			dg.GitHub.Detail = "A credential from " + tok.From + " was found and GitHub refused it: " + err.Error()
+			dg.GitHub.Fix = []string{"gh auth login  — sign in again"}
 		} else {
 			dg.GitHub.Working = true
 			dg.GitHub.Detail = "Working, using the credential from " + tok.From + "."
 		}
 	}
 	writeJSON(w, http.StatusOK, dg)
+}
+
+// installGh is the line to type on this machine, since "install gh" is not
+// the same sentence everywhere.
+func installGh() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "brew install gh"
+	case "windows":
+		return "winget install --id GitHub.cli"
+	default:
+		return "see https://github.com/cli/cli#installation"
+	}
 }
 
 func pingGitHub(ctx context.Context, token string) error {

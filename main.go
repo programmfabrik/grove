@@ -169,6 +169,8 @@ func (d *grove) routes(loopbackOnly bool) http.Handler {
 	mux.HandleFunc("GET /api/checks", d.handleChecks)
 	mux.HandleFunc("GET /api/diagnostics", d.handleDiagnostics)
 	mux.HandleFunc("POST /api/open", handleOpen)
+	mux.HandleFunc("GET /api/settings", d.handleSettings)
+	mux.HandleFunc("POST /api/settings", d.handleSettings)
 	mux.HandleFunc("POST /api/refresh", d.handleRefresh)
 	mux.HandleFunc("POST /api/revert", d.handleRevert)
 	mux.Handle("/", uiHandler())

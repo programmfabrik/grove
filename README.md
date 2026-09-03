@@ -628,13 +628,25 @@ pretending otherwise would mean two settings screens to keep in step; what is
 the operating system's is the window, the menu item and the shortcut, which is
 what "where do I find settings" is actually asking about.
 
-What it says is what grove is standing on, and what it is missing. grove runs
-other programs, and when one is absent a feature quietly does not happen — the
-check column stays empty and nobody is told whether that means "nothing is
-running" or "I could not ask". Settings says which: every program grove runs,
-whether it was found and at what version, what it is used for, and what goes
-without it. The GitHub credential is proved by using it, not assumed from a
-token being present.
+Three of the things grove does reach off this machine — asking GitHub about
+your checks, keeping the open checkout's remotes current, and looking for a
+newer grove — and each is a switch here. A tool that quietly talks to the
+network is a thing to be able to say no to, and a flag you have to restart with
+is not saying no, it is starting again. The switches take effect where they are
+flipped.
+
+The theme lives here too, and follows into the other window: both are one
+origin, so a change in either is a change in both.
+
+And what grove is standing on. It runs other programs, and when one is absent a
+feature quietly does not happen — the check column stays empty and nobody is
+told whether that means "nothing is running" or "I could not ask". The GitHub
+row says which, in one place rather than two: whether `gh` is installed and at
+what version, whether a credential was found and where from, and — when there
+is none — the exact lines to type, `brew install gh` and `gh auth login` on a
+Mac, with GITHUB_TOKEN and the git credential helper named as the alternatives.
+A credential that IS found is proved by using it, since a token that is present
+and refused looks exactly like one that works until something asks.
 
 ## What the loopback port is, and is not
 

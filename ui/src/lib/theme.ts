@@ -30,4 +30,11 @@ export function initTheme() {
   media.addEventListener('change', () => {
     if (getThemePref() === 'system') apply('system')
   })
+  // There are two windows now — the dashboard and the settings window — on one
+  // origin, so a change made in either belongs in both. localStorage tells the
+  // OTHER window and never the one that made the change, which is why apply()
+  // is called directly there and only listened for here.
+  window.addEventListener('storage', (e) => {
+    if (e.key === null || e.key === KEY) apply(getThemePref())
+  })
 }

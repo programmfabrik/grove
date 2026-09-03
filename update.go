@@ -87,7 +87,7 @@ func (u *updater) watch(ctx context.Context) {
 func (u *updater) check(ctx context.Context) {
 	// a build from a working tree has no version to compare against, and
 	// telling a developer their own build is out of date is just noise
-	if version == "dev" {
+	if version == "dev" || loadSettings().NoUpdateCheck {
 		return
 	}
 	rel, err := latestRelease(ctx)

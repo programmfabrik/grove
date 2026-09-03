@@ -1,4 +1,4 @@
-import type { Checks, DiffFile, Diagnostics, JobState, RemoteResult, RemoteState, Repo, ScopeRepo, State, Update } from './types'
+import type { Checks, DiffFile, Diagnostics, JobState, Prefs, RemoteResult, RemoteState, Repo, ScopeRepo, State, Update } from './types'
 
 async function j<T>(r: Response): Promise<T> {
   if (!r.ok) {
@@ -82,6 +82,13 @@ export const api = {
       j<{ checks: Record<string, Checks>; error?: string; note?: string }>(r),
     ),
   diagnostics: (): Promise<Diagnostics> => fetch('api/diagnostics').then((r) => j<Diagnostics>(r)),
+  prefs: (): Promise<Prefs> => fetch('api/settings').then((r) => j<Prefs>(r)),
+  setPrefs: (p: Prefs): Promise<Prefs> =>
+    fetch('api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(p),
+    }).then((r) => j<Prefs>(r)),
   // a window is not a browser: it has no tabs and no address bar, so a link
   // outward is handed to the browser you are already signed in to
   open: (url: string): Promise<{ opened: string }> =>

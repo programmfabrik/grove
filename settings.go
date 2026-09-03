@@ -2,6 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +22,14 @@ import (
 
 type settings struct {
 	Dir string `json:"dir"` // the directory of repositories last opened
+
+	// The three things grove does that reach off the machine, each of which
+	// somebody may reasonably not want. Stored as negatives so that the zero
+	// value — a settings file that has never been written — means everything
+	// on, which is what a first run should be.
+	NoChecks      bool `json:"no_checks,omitempty"`
+	NoAutoFetch   bool `json:"no_auto_fetch,omitempty"`
+	NoUpdateCheck bool `json:"no_update_check,omitempty"`
 }
 
 // settingsPath is the OS's own place for it: Application Support on macOS,
@@ -107,4 +118,28 @@ func hasRepos(dir string) bool {
 		}
 	}
 	return false
+}
+
+// handleSettings reads and writes the ones somebody can change. The window
+// showing them and the window using them are the same origin, so a change here
+// is a change everywhere as soon as either asks again.
+func (d *grove) handleSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		writeJSON(w, http.StatusOK, loadSettings())
+		return
+	}
+	var in settings
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&in); err != nil {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("bad request body: %w", err))
+		return
+	}
+	cur := loadSettings()
+	// Dir is not settable from here: it is chosen with the folder picker, so
+	// that what grove watches is always somewhere somebody actually pointed at
+	in.Dir = cur.Dir
+	if err := in.save(); err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, in)
 }

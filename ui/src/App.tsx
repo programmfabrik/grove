@@ -12,7 +12,6 @@ import { fmtAgo } from './lib/format'
 import { clamp, Splitter, useStoredWidth } from './components/Splitter'
 import { PaneFilter, PaneHead, PaneRail, useFolded, useStoredFlag } from './components/Pane'
 import { matchesFields, parseTerms } from './lib/filter'
-import { getThemePref, setThemePref, type ThemePref } from './lib/theme'
 import { readUrl, writeUrl } from './lib/urlstate'
 
 const POLL_MS = 4000
@@ -67,7 +66,6 @@ export default function App() {
     if (treesFilter) setTreesQ('')
     setTreesFilter(!treesFilter)
   }
-  const [theme, setTheme] = useState<ThemePref>(getThemePref())
   const [refreshing, setRefreshing] = useState(false)
 
   const [reposW, setReposW, resetReposW] = useStoredWidth('grove_repos_w', () => 210)
@@ -211,20 +209,6 @@ export default function App() {
           <button className="btn-ghost" onClick={refresh} disabled={refreshing}>
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
-          <div className="seg">
-            {(['light', 'dark', 'system'] as ThemePref[]).map((t) => (
-              <button
-                key={t}
-                className={theme === t ? 'active' : ''}
-                onClick={() => {
-                  setThemePref(t)
-                  setTheme(t)
-                }}
-              >
-                {t === 'light' ? '☀' : t === 'dark' ? '☾' : 'auto'}
-              </button>
-            ))}
-          </div>
         </div>
       </header>
 

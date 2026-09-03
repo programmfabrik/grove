@@ -284,6 +284,10 @@ func (d *grove) handleChecks(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, fmt.Errorf("no repository named"))
 		return
 	}
+	if loadSettings().NoChecks {
+		writeJSON(w, http.StatusOK, map[string]any{"checks": map[string]Checks{}, "off": true})
+		return
+	}
 	origin, err := git(repo, "remote", "get-url", "origin")
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"checks": map[string]Checks{}})

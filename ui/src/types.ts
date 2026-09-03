@@ -164,5 +164,21 @@ export type Diagnostics = {
   platform: string
   dir: string
   tools: Tool[]
-  github: { from?: string; working: boolean; detail: string }
+  github: {
+    tool: Tool
+    from?: string
+    working: boolean
+    detail: string
+    fix?: string[]
+    alternative?: string
+  }
+}
+
+// The switches somebody can actually set. Negatives, so that a settings file
+// that has never been written means everything on. See settings.go.
+export type Prefs = {
+  dir?: string
+  no_checks?: boolean
+  no_auto_fetch?: boolean
+  no_update_check?: boolean
 }
