@@ -49,6 +49,9 @@ type Update struct {
 	// a second copy beside the managed one and leave brew describing a version
 	// that is no longer there.
 	Homebrew bool `json:"homebrew,omitempty"`
+	// Desktop says this is the window rather than a browser tab, which changes
+	// how a link to somewhere else has to be opened.
+	Desktop bool `json:"desktop,omitempty"`
 }
 
 type updater struct {

@@ -93,6 +93,7 @@ export type Update = {
   url?: string
   notes_url?: string
   homebrew?: boolean
+  desktop?: boolean
 }
 
 // One repository's standing with its remote — the checkout, or a submodule
@@ -130,8 +131,23 @@ export type JobState = {
 }
 
 // What GitHub says about the commit a checkout has pushed. See checks.go.
-export type CheckRun = { name: string; status: string; conclusion?: string }
-export type Checks = { state: 'success' | 'pending' | 'failure' | 'none'; total: number; runs?: CheckRun[] }
+export type CheckRun = {
+  name: string
+  status: string
+  conclusion?: string
+  started_at?: string
+  completed_at?: string
+  url?: string
+}
+export type Checks = {
+  state: 'success' | 'pending' | 'failure' | 'none'
+  total: number
+  runs?: CheckRun[]
+  started?: string
+  finished?: string
+  url?: string
+  sha?: string
+}
 
 // What grove is standing on, and what it is missing. See diagnostics.go.
 export type Tool = {

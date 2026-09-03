@@ -31,16 +31,25 @@ type Checks struct {
 	// State is one of: success, pending, failure, none. "none" means GitHub
 	// has the commit and nothing has run for it; an empty Checks means grove
 	// could not ask.
-	State string `json:"state"`
-	Total int    `json:"total"`
-	// Runs is the detail behind the dot, for the tooltip.
-	Runs []CheckRun `json:"runs,omitempty"`
+	State string     `json:"state"`
+	Total int        `json:"total"`
+	Runs  []CheckRun `json:"runs,omitempty"`
+	// Started is when the earliest run began and Finished when the last one
+	// ended — empty while anything is still going, which is what lets the row
+	// say "running for 4m" rather than a time that has not happened yet.
+	Started  string `json:"started,omitempty"`
+	Finished string `json:"finished,omitempty"`
+	URL      string `json:"url,omitempty"` // the commit's checks page
+	Sha      string `json:"sha,omitempty"`
 }
 
 type CheckRun struct {
-	Name       string `json:"name"`
-	Status     string `json:"status"`
-	Conclusion string `json:"conclusion,omitempty"`
+	Name        string `json:"name"`
+	Status      string `json:"status"`
+	Conclusion  string `json:"conclusion,omitempty"`
+	StartedAt   string `json:"started_at,omitempty"`
+	CompletedAt string `json:"completed_at,omitempty"`
+	URL         string `json:"url,omitempty"`
 }
 
 // ghRemote is the owner and repository a remote URL points at, for the two
@@ -188,13 +197,32 @@ func fetchChecks(ctx context.Context, token, owner, repo, sha string) (Checks, e
 		return Checks{}, fmt.Errorf("GitHub: %s", res.Status)
 	}
 	var body struct {
-		Total     int        `json:"total_count"`
-		CheckRuns []CheckRun `json:"check_runs"`
+		Total     int `json:"total_count"`
+		CheckRuns []struct {
+			Name        string `json:"name"`
+			Status      string `json:"status"`
+			Conclusion  string `json:"conclusion"`
+			StartedAt   string `json:"started_at"`
+			CompletedAt string `json:"completed_at"`
+			HTMLURL     string `json:"html_url"`
+		} `json:"check_runs"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
 		return Checks{}, err
 	}
-	return combine(body.Total, body.CheckRuns), nil
+	runs := make([]CheckRun, 0, len(body.CheckRuns))
+	for _, r := range body.CheckRuns {
+		runs = append(runs, CheckRun{
+			Name: r.Name, Status: r.Status, Conclusion: r.Conclusion,
+			StartedAt: r.StartedAt, CompletedAt: r.CompletedAt, URL: r.HTMLURL,
+		})
+	}
+	c := combine(body.Total, runs)
+	c.Sha = sha
+	if c.Total > 0 {
+		c.URL = fmt.Sprintf("https://github.com/%s/%s/commit/%s/checks", owner, repo, sha)
+	}
+	return c, nil
 }
 
 // combine reduces a commit's runs to the one thing the list has room for. The
@@ -224,6 +252,22 @@ func combine(total int, runs []CheckRun) Checks {
 		}
 	}
 	c.State = state
+
+	// when the whole thing started, and when it ended — the latter only once
+	// everything has, since "finished at" while a job is still running is not
+	// a time that has happened
+	for _, r := range runs {
+		if r.StartedAt != "" && (c.Started == "" || r.StartedAt < c.Started) {
+			c.Started = r.StartedAt
+		}
+	}
+	if state != "pending" {
+		for _, r := range runs {
+			if r.CompletedAt > c.Finished {
+				c.Finished = r.CompletedAt
+			}
+		}
+	}
 	return c
 }
 

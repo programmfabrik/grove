@@ -82,6 +82,14 @@ export const api = {
       j<{ checks: Record<string, Checks>; error?: string; note?: string }>(r),
     ),
   diagnostics: (): Promise<Diagnostics> => fetch('api/diagnostics').then((r) => j<Diagnostics>(r)),
+  // a window is not a browser: it has no tabs and no address bar, so a link
+  // outward is handed to the browser you are already signed in to
+  open: (url: string): Promise<{ opened: string }> =>
+    fetch('api/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    }).then((r) => j<{ opened: string }>(r)),
   // what is running, and whether anything newer was published
   version: (): Promise<Update> => fetch('api/version').then((r) => j<Update>(r)),
   // where every repository under a checkout stands with its remote. A read:

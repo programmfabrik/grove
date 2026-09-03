@@ -7,6 +7,7 @@ import { Sidebar } from './components/Sidebar'
 import { Logo } from './components/ui'
 import { UpdateNotice } from './components/UpdateNotice'
 import { Settings } from './components/Settings'
+import { ChecksDialog } from './components/ChecksLine'
 import { fmtAgo } from './lib/format'
 import { clamp, Splitter, useStoredWidth } from './components/Splitter'
 import { PaneFilter, PaneHead, PaneRail, useFolded, useStoredFlag } from './components/Pane'
@@ -34,6 +35,7 @@ export default function App() {
   // selected repository only and left alone otherwise
   const [checks, setChecks] = useState<Record<string, Checks>>({})
   const [showSettings, setShowSettings] = useState(false)
+  const [showChecks, setShowChecks] = useState<string | null>(null)
   useEffect(() => {
     api.version().then(setUpdate).catch(() => {})
   }, [])
@@ -224,6 +226,15 @@ export default function App() {
 
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
 
+      {showChecks && checks[showChecks] && (
+        <ChecksDialog
+          name={showChecks}
+          checks={checks[showChecks]}
+          desktop={!!update?.desktop}
+          onClose={() => setShowChecks(null)}
+        />
+      )}
+
       {(error || state?.git_error) && <div className="error error-bar">{error || state?.git_error}</div>}
 
       <div className="panes">
@@ -274,6 +285,7 @@ export default function App() {
                 sel={checkout}
                 terms={treeTerms}
                 checks={checks}
+                onChecks={setShowChecks}
                 onPick={(n) => {
                   setCheckout(n)
                   setDiffRepo(undefined)

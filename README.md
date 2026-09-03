@@ -577,11 +577,23 @@ alone. A window nobody is looking at fetches nothing.
 
 ## Is what you pushed passing?
 
-The worktree list carries one dot per checkout: green if GitHub's checks on the
-pushed commit passed, amber and pulsing while they run, red if any failed. The
-worst state wins, because the dot has room for one word and a green one beside
-a failed job is the lie a dashboard exists to prevent. Hovering names every run
-and what became of it.
+The **branch name** carries the colour: green if GitHub's checks on the pushed
+commit passed, amber while they run, red if any failed. The branch takes it
+rather than a dot beside it, because the branch is what the state is *about* —
+a coloured dot on its own says a state exists without saying whose. The worst
+state wins, since the colour has room for one word and a green one beside a
+failed job is the lie a dashboard exists to prevent.
+
+The right of the same line says **when, and how long**: `running 21m 12s` while
+they go, `17h ago · 1h 7m` once they are done — because green is worth knowing
+and green four days ago is worth knowing something else about. A dot sits at
+the end of it for the colour-blind case and for a glance down the column.
+
+Clicking that text opens every run behind it, each with its own state and how
+long it took, and **Open in GitHub** goes to the commit's checks page. A window
+is not a browser — no tabs, no address bar — so in the app the link is handed
+to the browser you are already signed in to rather than opened in a webview
+with no way out of it.
 
 It asks about the commit the **remote** has, not the one on disk — "is what I
 pushed being tested" is the question, and a commit nobody has seen is not being

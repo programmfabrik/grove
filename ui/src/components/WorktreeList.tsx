@@ -1,6 +1,7 @@
 import type { Checkout, Checks } from '../types'
 import { useScrollToActive } from '../lib/scroll'
 import { Hits } from './Hits'
+import { ChecksLine, checkClass } from './ChecksLine'
 
 // Pane two: the worktrees of the selected repo. Most repos have exactly one
 // checkout and this is a single row; a repo with two dozen is the case worth
@@ -12,6 +13,7 @@ export function WorktreeList({
   terms,
   checks,
   onPick,
+  onChecks,
 }: {
   checkouts: Checkout[]
   base: string
@@ -19,6 +21,7 @@ export function WorktreeList({
   terms: string[]
   checks?: Record<string, Checks>
   onPick: (name: string) => void
+  onChecks: (name: string) => void
 }) {
   const box = useScrollToActive('.wl-active', sel)
   return (
@@ -34,7 +37,6 @@ export function WorktreeList({
             <span className="wl-name mono">
               <Hits text={c.name} terms={terms} />
             </span>
-            <CheckDot checks={checks?.[c.name]} />
             <span className="gitstat" title={`${c.ahead} ahead of ${base}, ${c.behind} behind, ${c.dirty} uncommitted`}>
               {/* the glyph is a label, not a digit: it gets its own breathing
                   room rather than sitting flush against the count */}
@@ -53,35 +55,17 @@ export function WorktreeList({
             </span>
           </div>
           <div className="wl-sub">
-            <span className="wl-branch dim" title={c.branch}>
+            {/* the branch takes the colour, because the state is about the
+                branch: a coloured dot on its own says a state exists without
+                saying whose */}
+            <span className={'wl-branch dim' + checkClass(checks?.[c.name])} title={c.branch}>
               <Hits text={c.detached ? 'detached' : c.branch} terms={terms} />
             </span>
+            <ChecksLine checks={checks?.[c.name]} onOpen={() => onChecks(c.name)} />
           </div>
         </div>
       ))}
       {!checkouts.length && <div className="empty small">no worktrees</div>}
     </div>
-  )
-}
-
-// Whether GitHub is testing what this checkout pushed.
-//
-// It reports on the commit the REMOTE has, not the one on disk: "is what I
-// pushed passing" is the question, and a commit nobody has seen is not being
-// tested by anybody. Nothing is drawn when grove could not ask — an empty
-// space is honest, and a grey dot would claim GitHub had answered.
-export function CheckDot({ checks }: { checks?: Checks }) {
-  if (!checks || checks.state === 'none') return null
-  const word =
-    checks.state === 'success' ? 'passing' : checks.state === 'failure' ? 'failing' : 'running'
-  const detail = (checks.runs ?? [])
-    .map((r) => `${r.conclusion || r.status}  ${r.name}`)
-    .join('\n')
-  return (
-    <span
-      className={'ci ci-' + checks.state}
-      title={`GitHub checks on the pushed commit: ${word}\n\n${detail}`}
-      aria-label={`checks ${word}`}
-    />
   )
 }

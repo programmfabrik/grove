@@ -36,3 +36,14 @@ export async function copy(text: string): Promise<boolean> {
     return false
   }
 }
+
+// fmtDur is how long something took, in the units a person would say it in.
+export function fmtDur(ms: number): string {
+  if (!isFinite(ms) || ms < 0) return ''
+  const s = Math.round(ms / 1000)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return s % 60 ? `${m}m ${s % 60}s` : `${m}m`
+  const h = Math.floor(m / 60)
+  return m % 60 ? `${h}h ${m % 60}m` : `${h}h`
+}

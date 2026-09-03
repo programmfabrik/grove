@@ -23,8 +23,10 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -166,6 +168,7 @@ func (d *grove) routes(loopbackOnly bool) http.Handler {
 	mux.HandleFunc("GET /api/run", d.handleJob)
 	mux.HandleFunc("GET /api/checks", d.handleChecks)
 	mux.HandleFunc("GET /api/diagnostics", d.handleDiagnostics)
+	mux.HandleFunc("POST /api/open", handleOpen)
 	mux.HandleFunc("POST /api/refresh", d.handleRefresh)
 	mux.HandleFunc("POST /api/revert", d.handleRevert)
 	mux.Handle("/", uiHandler())
@@ -249,15 +252,44 @@ func (d *grove) handleState(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleOpen sends one link to the browser you actually use.
+//
+// A window is not a browser: the webview has no tabs and no address bar, and
+// target="_blank" inside it either does nothing or opens a second window with
+// no way out of it. A link to GitHub belongs in the browser where you are
+// already signed in, so the page asks grove to open it there.
+//
+// https only, and behind the same guard as every other write: a page on
+// another site cannot reach this, and a link is not a shell command.
+func handleOpen(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<14)).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("bad request body: %w", err))
+		return
+	}
+	u, err := url.Parse(req.URL)
+	if err != nil || u.Scheme != "https" || u.Host == "" {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("only https links are opened"))
+		return
+	}
+	go openBrowser(u.String())
+	writeJSON(w, http.StatusOK, map[string]any{"opened": u.String()})
+}
+
 // handleVersion says what is running and, if the check is on and found one,
 // what has been released since. It never blocks on the network: the check runs
 // in the background and this reports whatever it last learned.
 func (d *grove) handleVersion(w http.ResponseWriter, r *http.Request) {
-	if d.up == nil {
-		writeJSON(w, http.StatusOK, Update{Version: version})
-		return
+	u := Update{Version: version}
+	if d.up != nil {
+		u = d.up.get()
 	}
-	writeJSON(w, http.StatusOK, d.up.get())
+	// the page cannot tell a window from a tab, and it needs to: a link opens
+	// differently in each
+	u.Desktop = distKind == "app"
+	writeJSON(w, http.StatusOK, u)
 }
 
 // handleRefresh drops the caches so the next reads rescan — the UI's explicit
