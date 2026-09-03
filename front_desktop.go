@@ -187,18 +187,23 @@ func rememberOrRecallDir(d *grove) {
 // is a fact about the machine, not something anybody can change, and a
 // settings screen full of read-only facts is how a settings screen stops being
 // read at all.
+//
+// The panel is a narrow column of proportional text, which rules out the
+// obvious layout: padding labels with spaces lines nothing up when every
+// character is a different width, and a path on the end of a longer line wraps
+// through the middle of itself. So each fact is a short line of its own, and
+// the path — the longest thing here and the one worth reading exactly — gets
+// the whole of one.
 func aboutText() string {
 	lines := []string{
 		"Every checkout, every worktree, and what each of them changed.",
 		"",
-		"Version   " + version,
-		"Platform  " + runtime.GOOS + "/" + runtime.GOARCH,
+		"Version " + version + " · " + runtime.GOOS + "/" + runtime.GOARCH,
 	}
 	if v, err := git("", "--version"); err == nil {
-		lines = append(lines, "git       "+strings.TrimPrefix(v, "git version ")+"  "+gitExe)
-	} else {
-		lines = append(lines, "git       "+gitExe)
+		lines = append(lines, "git "+strings.TrimPrefix(v, "git version "))
 	}
+	lines = append(lines, gitExe)
 	return strings.Join(lines, "\n")
 }
 
