@@ -90,7 +90,16 @@ func loginShellPath() string {
 }
 
 // lookPath is exec.LookPath over that search path.
+//
+// Windows is left to exec.LookPath entirely. The problem this exists for is a
+// macOS one — a GUI application there is started by launchd and inherits none
+// of your shell — while on Windows the environment a program is launched with
+// is the one you have, and what counts as runnable is the extension rather
+// than a permission bit, which the standard library already knows about.
 func lookPath(name string) (string, error) {
+	if runtime.GOOS == "windows" {
+		return exec.LookPath(name)
+	}
 	if filepath.IsAbs(name) {
 		if usable(name) {
 			return name, nil

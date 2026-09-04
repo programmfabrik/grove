@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -10,6 +11,9 @@ import (
 // consults the process environment finds nothing a package manager installed —
 // and grove then tells somebody to install what they already have.
 func TestLookPathReachesBeyondTheProcessEnvironment(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a Windows program inherits the environment it was started with, and lookPath leaves that to exec.LookPath")
+	}
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "grove-test-tool")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho hi\n"), 0o755); err != nil {
@@ -36,6 +40,9 @@ func TestLookPathReachesBeyondTheProcessEnvironment(t *testing.T) {
 
 // A directory, or a file nobody may run, is not a program.
 func TestLookPathWantsSomethingRunnable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("runnable is an extension on Windows, not a permission bit")
+	}
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, "adirectory"), 0o755); err != nil {
 		t.Fatal(err)
