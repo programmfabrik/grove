@@ -160,3 +160,16 @@ func (d *grove) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, in)
 }
+
+// remember writes down where grove is looking WITHOUT taking anything else
+// with it. Building a fresh settings value and saving it discards every other
+// preference in the file, which is how a launch from a directory that happened
+// to hold repositories quietly reset somebody's editor, terminal and browser.
+func remember(dir string) {
+	s := loadSettings()
+	if s.Dir == dir {
+		return
+	}
+	s.Dir = dir
+	s.save()
+}

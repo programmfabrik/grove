@@ -179,7 +179,7 @@ func rememberOrRecallDir(d *grove) {
 		}
 		return
 	}
-	settings{Dir: d.dir()}.save()
+	remember(d.dir())
 }
 
 // aboutText is what About says: what this grove is, and what it is running on.
@@ -275,7 +275,8 @@ func chooseFolder(app *application.App, d *grove, win application.Window, url st
 		app.Dialog.Error().SetMessage(err.Error()).Show()
 		return
 	}
-	settings{Dir: d.dir()}.save() // so the next launch from the icon lands here
+	// setDir has already written the directory and the recents; nothing else
+	// to save, and nothing else to accidentally overwrite
 	// SetURL rather than Reload: the fragment names a repo, a worktree and a
 	// file of the directory just left, and none of them is there any more
 	win.SetURL(url)
