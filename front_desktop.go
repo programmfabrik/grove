@@ -74,6 +74,13 @@ func run(d *grove, addr string, explicit, _ bool) error {
 	// dialog to put behind it
 	pickFolder = func() { chooseFolder(app, d, win, url) }
 	pickApp = func(kind string) (string, string, bool) { return chooseApp(app, kind) }
+	// a right-click in any of the three columns can ask for a second window on
+	// what it names. InvokeAsync because the request arrives on an HTTP
+	// goroutine and a window is made on the main thread — and async rather than
+	// sync so that thread being busy cannot block the server behind it.
+	openWindow = func(frag, title string) {
+		application.InvokeAsync(func() { openView(app, url, frag, title) })
+	}
 
 	// Nothing to show means a first run, or a remembered directory that has
 	// since gone. Either way an empty window explains nothing, so ask — once
@@ -228,6 +235,23 @@ func openSettings(app *application.App, url string) {
 		MinHeight:     360,
 		DisableResize: false,
 		URL:           url + "?view=settings",
+	})
+}
+
+// openView opens the dashboard again, at the view a fragment names.
+//
+// Always a new window, never a raised one. "Open in new window" is an
+// instruction, and a window that had been opened for a worktree and then
+// steered somewhere else is not the window somebody asking for that worktree
+// meant. Windows are cheap; being handed the wrong one is not.
+func openView(app *application.App, url, frag, title string) {
+	app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Title:     title,
+		Width:     1200,
+		Height:    800,
+		MinWidth:  700,
+		MinHeight: 420,
+		URL:       url + "#" + frag,
 	})
 }
 

@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import type { Repo } from '../types'
 import { fmtAgo } from '../lib/format'
 import { useScrollToActive } from '../lib/scroll'
 import { Hits } from './Hits'
+import { RowMenu, onRowMenu, type RowMenuState } from './RowMenu'
 
 // Pane one: the repositories in the start directory. Sorted by how much is
 // checked out and then by when the repo was last touched — a repo with a dozen
@@ -21,14 +23,17 @@ export function RepoList({
   onPick: (path: string) => void
 }) {
   const box = useScrollToActive('.rp-active', sel)
+  const [menu, setMenu] = useState<RowMenuState | null>(null)
   if (!repos) return <div className="empty small">loading…</div>
   return (
     <div className="rp-list" ref={box}>
+      {menu && <RowMenu menu={menu} onClose={() => setMenu(null)} />}
       {repos.map((r) => (
         <div
           key={r.path}
           className={`rp-row${r.path === sel ? ' rp-active' : ''}`}
           onClick={() => onPick(r.path)}
+          onContextMenu={onRowMenu(setMenu, { label: r.name, view: { repo: r.name }, title: r.name })}
           title={r.path}
         >
           <div className="rp-line">

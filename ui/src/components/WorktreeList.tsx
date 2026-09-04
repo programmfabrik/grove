@@ -1,6 +1,9 @@
+import { useState } from 'react'
 import type { Checkout, Checks } from '../types'
 import { useScrollToActive } from '../lib/scroll'
+import { where } from '../lib/window'
 import { Hits } from './Hits'
+import { RowMenu, onRowMenu, type RowMenuState } from './RowMenu'
 import { ChecksLine, checkClass } from './ChecksLine'
 
 // Pane two: the worktrees of the selected repo. Most repos have exactly one
@@ -24,13 +27,22 @@ export function WorktreeList({
   onChecks: (name: string) => void
 }) {
   const box = useScrollToActive('.wl-active', sel)
+  const [menu, setMenu] = useState<RowMenuState | null>(null)
   return (
     <div className="wl-list" ref={box}>
+      {menu && <RowMenu menu={menu} onClose={() => setMenu(null)} />}
       {checkouts.map((c) => (
         <div
           key={c.name}
           className={`wl-row${c.name === sel ? ' wl-active' : ''}`}
           onClick={() => onPick(c.name)}
+          onContextMenu={onRowMenu(setMenu, {
+            label: c.name,
+            // a fresh window on this worktree, not on whatever file the
+            // current one happens to be reading in another one
+            view: where({ wt: c.name, sub: undefined, scope: undefined, file: undefined }),
+            title: c.name,
+          })}
           title={c.path}
         >
           <div className="wl-line">

@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
 import type { DiffFile } from '../types'
+import { useDismiss, useMenuAt } from '../lib/menu'
 
 // The tree's context menu, and the confirmation in front of the one thing
 // grove can destroy. The offered actions follow git's own model, the way
@@ -37,25 +37,8 @@ export function ContextMenu({
   onEdit?: (f: DiffFile) => void
   onClose: () => void
 }) {
-  useEffect(() => {
-    const away = () => onClose()
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    // Registered a tick late, on purpose. React flushes a discrete event's
-    // state update while that same event is still bubbling, so listeners added
-    // straight away would see the very right-click that opened the menu and
-    // close it again — the menu would never appear at all.
-    const t = setTimeout(() => {
-      window.addEventListener('click', away)
-      window.addEventListener('contextmenu', away)
-    }, 0)
-    window.addEventListener('keydown', esc)
-    return () => {
-      clearTimeout(t)
-      window.removeEventListener('click', away)
-      window.removeEventListener('contextmenu', away)
-      window.removeEventListener('keydown', esc)
-    }
-  }, [onClose])
+  useDismiss(onClose)
+  const { ref, at } = useMenuAt(menu.x, menu.y)
 
   const toUnstage = stageable(menu.files)
   const toDiscard = discardable(menu.files)
@@ -63,8 +46,9 @@ export function ContextMenu({
 
   return (
     <div
+      ref={ref}
       className="ctx"
-      style={{ left: menu.x, top: menu.y }}
+      style={at}
       onClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
     >

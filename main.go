@@ -202,6 +202,7 @@ func (d *grove) routes(loopbackOnly bool) http.Handler {
 	mux.HandleFunc("POST /api/loginitem", d.handleLoginItem)
 	mux.HandleFunc("POST /api/refresh", d.handleRefresh)
 	mux.HandleFunc("POST /api/revert", d.handleRevert)
+	mux.HandleFunc("POST /api/window", d.handleWindow)
 	mux.Handle("/", uiHandler())
 	// Everything goes through the guard, the page included: the Host check is
 	// what stops a rebound name reading the dashboard, and that is not an /api

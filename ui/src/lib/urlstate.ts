@@ -27,16 +27,23 @@ export function readUrl(): UrlState {
   return out
 }
 
-// writeUrl replaces the fragment. replaceState, not pushState: selecting a file
-// is navigation within one view, and a back button that walks every click of a
-// session is worse than none.
-export function writeUrl(s: UrlState) {
+// fragmentFor renders a view as the fragment that names it. The keys it does
+// not know are dropped, so a state built by spreading another one over a
+// partial cannot smuggle anything through.
+export function fragmentFor(s: UrlState): string {
   const p = new URLSearchParams()
   for (const k of KEYS) {
     const v = s[k]
     if (v) p.set(k, v)
   }
-  const hash = p.toString()
+  return p.toString()
+}
+
+// writeUrl replaces the fragment. replaceState, not pushState: selecting a file
+// is navigation within one view, and a back button that walks every click of a
+// session is worse than none.
+export function writeUrl(s: UrlState) {
+  const hash = fragmentFor(s)
   const url = `${location.pathname}${location.search}${hash ? '#' + hash : ''}`
   if (url !== location.pathname + location.search + location.hash) {
     history.replaceState(null, '', url)

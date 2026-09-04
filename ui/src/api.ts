@@ -143,6 +143,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
     }).then((r) => j<{ opened: string }>(r)),
+  // a second window on the same page, at the view the fragment names. Only
+  // the app has windows to open; a browser opens its own and never asks.
+  window: (frag: string, title: string): Promise<{ opened: boolean }> =>
+    fetch('api/window', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ frag, title }),
+    }).then((r) => j<{ opened: boolean }>(r)),
   // what is running, and whether anything newer was published
   version: (): Promise<Update> => fetch('api/version').then((r) => j<Update>(r)),
   // where every repository under a checkout stands with its remote. A read:

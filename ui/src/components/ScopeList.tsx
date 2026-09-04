@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import type { ScopeRepo } from '../types'
 import { useScrollToActive } from '../lib/scroll'
+import { where } from '../lib/window'
 import { commitState } from '../lib/commit'
 import { matchesFields } from '../lib/filter'
 import { Hits } from './Hits'
+import { RowMenu, onRowMenu, type RowMenuState } from './RowMenu'
 
 // The scope list: what the diff shows, per repo. A worktree's changes have
 // several honest readings — against the base branch, against what is pushed,
@@ -38,6 +40,7 @@ export function ScopeList({
   // repo sections fold away: a checkout with submodules lists several repos'
   // worth of commits and only one of them is usually the one being worked on
   const [folded, setFolded] = useState<Set<string>>(new Set())
+  const [menu, setMenu] = useState<RowMenuState | null>(null)
   const fold = (name: string) =>
     setFolded((prev) => {
       const next = new Set(prev)
@@ -48,6 +51,7 @@ export function ScopeList({
 
   return (
     <div className="sb-scopes" ref={box}>
+      {menu && <RowMenu menu={menu} onClose={() => setMenu(null)} />}
       {repos.map((r) => {
         const shown = r.scopes.filter(
           (s) =>
@@ -78,6 +82,13 @@ export function ScopeList({
                 key={s.id}
                 className={`sc-row${active ? ' sc-active' : ''}${s.files ? '' : ' sc-empty'}${commit ? ' sc-commit' : ''}`}
                 onClick={() => onPick(r.name, s.id)}
+                onContextMenu={onRowMenu(setMenu, {
+                  label: s.label,
+                  // the scope, opened whole: the file the current window is
+                  // reading is not part of what this row names
+                  view: where({ sub: r.name, scope: s.id, file: undefined }),
+                  title: s.label,
+                })}
                 title={[s.label, s.hint || kindLabel[s.kind], s.date, state?.title].filter(Boolean).join(' · ')}
               >
                 <div className="sc-line">

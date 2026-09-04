@@ -13,6 +13,7 @@ import { clamp, Splitter, useStoredWidth } from './components/Splitter'
 import { PaneFilter, PaneHead, PaneRail, useFolded, useStoredFlag } from './components/Pane'
 import { matchesFields, parseTerms } from './lib/filter'
 import { readUrl, writeUrl } from './lib/urlstate'
+import { setNativeWindows } from './lib/window'
 
 const POLL_MS = 4000
 const REPO_POLL_MS = 30000
@@ -49,7 +50,14 @@ export default function App() {
     return () => window.removeEventListener('storage', heard)
   }, [])
   useEffect(() => {
-    api.version().then(setUpdate).catch(() => {})
+    api
+      .version()
+      .then((u) => {
+        setUpdate(u)
+        // which kind of window a right-click can ask for — see lib/window
+        setNativeWindows(!!u.desktop)
+      })
+      .catch(() => {})
   }, [])
   const [repo, setRepo] = useState('')
   const [state, setState] = useState<State | null>(null)
