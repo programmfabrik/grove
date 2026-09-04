@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { api } from '../api'
 import type { Checkout, DiffFile } from '../types'
 import { DiffTab } from './DiffTab'
-import { Copy } from './ui'
 import { fmtDateTime } from '../lib/format'
 import { ContextMenu, RevertDialog, type MenuState, type PendingRevert } from './RevertMenu'
 import { RemoteBar } from './RemoteBar'
@@ -42,7 +41,7 @@ export function Sidebar({
     <>
       <div className="sb-head">
         <div className="sb-pick">
-          <div className="sb-title">
+          <div className="sb-title" title={`${c.path}\n\n${c.head.hash} · ${c.head.author} · ${fmtDateTime(c.head.date)}\n${c.head.subject}`}>
             <span className="mono">{c.name}</span>
             <span className="sb-branch mono dim">{c.detached ? 'detached' : c.branch}</span>
           </div>
@@ -78,15 +77,6 @@ export function Sidebar({
             </button>
           )}
           <RemoteBar name={c.name} onChanged={() => setReverted((n) => n + 1)} />
-        </div>
-        <div className="sb-facts dim">
-          <Copy text={c.path} title="Copy path">
-            <span className="mono">{c.path}</span>
-          </Copy>
-          <div className="sb-fact" title={c.head.subject}>
-            <span className="mono">{c.head.hash}</span> · {c.head.author} · {fmtDateTime(c.head.date)} ·{' '}
-            {c.head.subject}
-          </div>
         </div>
       </div>
 
