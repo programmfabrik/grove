@@ -68,7 +68,7 @@ func (d *grove) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 
 	dg.Tools = append(dg.Tools, git)
 
-	ghPath, ghErr := exec.LookPath("gh")
+	ghPath, ghErr := lookPath("gh")
 	ghVersion := ""
 	if ghErr == nil {
 		if v, err := exec.Command(ghPath, "--version").Output(); err == nil {

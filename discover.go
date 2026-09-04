@@ -191,7 +191,7 @@ var gitExe = "git"
 // everything else — a dashboard that looks broken rather than one that says
 // what is missing.
 func findGit() error {
-	p, err := exec.LookPath("git")
+	p, err := lookPath("git")
 	if err != nil {
 		if p = fallbackGit(); p == "" {
 			return fmt.Errorf("git is not on the PATH%s", installHint())

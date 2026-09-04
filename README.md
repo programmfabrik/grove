@@ -643,6 +643,14 @@ grove does not bring its own: somebody who reads diffs all day already has an
 editor they mean, and a dashboard that opened a different one would be wrong in
 a way no setting could excuse.
 
+grove looks for command line programs the way a shell would, not the way it was
+launched. A GUI application inherits none of your PATH: from the Dock it gets
+launchd's, which has no `/opt/homebrew/bin` in it, so `gh`, `nvim` and `hx`
+are all invisible — and grove told somebody with `gh` installed and signed in
+to go and install `gh`, which is worse than not having looked. It asks the
+login shell for its PATH once and searches that, with the usual package
+manager directories behind it.
+
 The list is what it found here, and **Choose an application…** reaches
 everything else, because no list of programs is ever complete. Detecting them
 from what a bundle declares was tried and abandoned: VS Code and Cursor declare

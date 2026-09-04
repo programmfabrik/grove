@@ -170,7 +170,7 @@ func (k known) find() (Program, bool) {
 		}
 	}
 	if k.Bin != "" {
-		if bin, err := exec.LookPath(k.Bin); err == nil {
+		if bin, err := lookPath(k.Bin); err == nil {
 			p.How, p.Path, p.Line = "cli", bin, k.Line != "" && k.Line != "none"
 			return p, true
 		}

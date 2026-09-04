@@ -77,9 +77,11 @@ type tokenSource struct {
 // stdin so a helper that wants to ask a question fails instead of hanging a
 // dashboard on an invisible prompt.
 func findToken() tokenSource {
-	if out, err := exec.Command("gh", "auth", "token").Output(); err == nil {
-		if t := strings.TrimSpace(string(out)); t != "" {
-			return tokenSource{Token: t, From: "gh"}
+	if gh, err := lookPath("gh"); err == nil {
+		if out, err := exec.Command(gh, "auth", "token").Output(); err == nil {
+			if t := strings.TrimSpace(string(out)); t != "" {
+				return tokenSource{Token: t, From: "gh"}
+			}
 		}
 	}
 	for _, k := range []string{"GITHUB_TOKEN", "GH_TOKEN"} {
