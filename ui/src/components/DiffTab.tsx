@@ -297,10 +297,45 @@ export function DiffTab({
     setOpenSections(new Set(keys.length <= AUTO_OPEN_MAX ? keys : []))
   }, [pickedKey])
 
+  // Where a shift-range measures FROM. It stays where the last plain or
+  // cmd-click put it, which is the part that makes a range re-drawable: shift,
+  // look, shift again somewhere else, and you get a range from the same place
+  // rather than one grown from wherever the last one happened to end.
+  //
+  // A selection nobody clicked for counts too. Landing on a scope opens a file,
+  // and shift-clicking four rows down has to mean the four rows — being handed
+  // the fourth on its own is the answer to a question nobody asked.
+  //
+  // An anchor from a tree that is gone is no anchor: switching scope replaces
+  // every key, and folding a directory can take the anchor off screen.
+  const rangeStart = (order: string[]) => {
+    for (const k of [anchor, picked[0]]) if (k && order.includes(k)) return k
+    return ''
+  }
+
   const pick = (n: Node, e: React.MouseEvent) => {
     const leaves = leavesOf(n).map(key)
     if (!leaves.length) return
-    if (e.metaKey || e.ctrlKey) {
+    const order = visibleLeaves(tree, folds).map((x) => x.key)
+    const add = e.metaKey || e.ctrlKey
+
+    if (e.shiftKey) {
+      const a = order.indexOf(rangeStart(order))
+      // a directory reaches to whichever of its ends is further from the
+      // anchor, so shift-clicking a folder takes the whole of it either way
+      const ends = [order.indexOf(leaves[0]), order.indexOf(leaves[leaves.length - 1])].filter((i) => i >= 0)
+      if (a >= 0 && ends.length) {
+        const b = ends.reduce((far, i) => (Math.abs(i - a) > Math.abs(far - a) ? i : far), ends[0])
+        const range = order.slice(Math.min(a, b), Math.max(a, b) + 1)
+        // shift with cmd adds the range to the selection instead of replacing
+        // it, which is how a second run of files is added to a first
+        setPicked((prev) => (add ? [...new Set([...prev, ...range])] : range))
+        return // and the anchor does not move: that is the whole point of one
+      }
+      // nothing to measure from — fall through and behave like a plain click
+    }
+
+    if (add) {
       // add or remove, so a selection can be assembled file by file
       setPicked((prev) => {
         const set = new Set(prev)
@@ -308,16 +343,10 @@ export function DiffTab({
         leaves.forEach((k) => (allIn ? set.delete(k) : set.add(k)))
         return [...set]
       })
-    } else if (e.shiftKey && anchor) {
-      const order = visibleLeaves(tree, folds).map((x) => x.key)
-      const a = order.indexOf(anchor)
-      const b = order.indexOf(leaves[leaves.length - 1])
-      if (a >= 0 && b >= 0) setPicked(order.slice(Math.min(a, b), Math.max(a, b) + 1))
-      else setPicked(leaves)
     } else {
       setPicked(leaves)
     }
-    if (n.file) setAnchor(n.key)
+    setAnchor(n.file ? n.key : leaves[0])
   }
 
   const splitRef = useRef<HTMLDivElement>(null)

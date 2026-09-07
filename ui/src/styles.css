@@ -308,7 +308,11 @@ a { color: var(--accent-ink); }
    active row is already accent-tinted, so a hit marked in accent would vanish
    exactly where it is being looked for */
 
+/* user-select: none because these rows are clicked in runs — a shift-click on
+   a list that can be text-selected drags a blue smear across everything
+   between the two rows as well as selecting them */
 .tw-row {
+  user-select: none;
   display: flex; align-items: center; gap: 4px;
   padding: 2px 8px 2px 0; cursor: pointer; white-space: nowrap;
 }
