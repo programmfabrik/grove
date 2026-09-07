@@ -257,12 +257,20 @@ export function DiffTab({
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [filterFolds, setFilterFolds] = useState<Set<string>>(new Set())
   const filtering = terms.length > 0
-  const toggle = (k: string) =>
-    (filtering ? setFilterFolds : setCollapsed)((prev) => {
+  // Shift takes the whole subtree with it, the way a list view's option-click
+  // does. Unfolding one directory at a time to reach a file six deep is six
+  // clicks, and folding one up again leaves every directory inside it open
+  // for the next time — so shift-fold marks them all folded, and the directory
+  // opens to one level of children rather than to wherever it was left.
+  const toggle = (n: Node, e: React.MouseEvent) => {
+    const dirs = (x: Node): string[] => (x.file ? [] : [x.key, ...x.children.flatMap(dirs)])
+    ;(filtering ? setFilterFolds : setCollapsed)((prev) => {
       const next = new Set(prev)
-      next.has(k) ? next.delete(k) : next.add(k)
+      const folding = !prev.has(n.key)
+      for (const k of e.shiftKey ? dirs(n) : [n.key]) folding ? next.add(k) : next.delete(k)
       return next
     })
+  }
 
   // each filtering session starts fresh: the folds of the last one belong to a
   // result set that is gone

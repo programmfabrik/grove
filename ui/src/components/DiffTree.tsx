@@ -252,7 +252,9 @@ export function TreeRows({
   // the filter's terms, for highlighting; the pruning already happened
   terms: string[]
   onPick: (n: Node, e: React.MouseEvent) => void
-  onToggle: (key: string) => void
+  // the node rather than its key: shift folds the whole subtree, and that
+  // needs the children the key alone does not carry
+  onToggle: (n: Node, e: React.MouseEvent) => void
   onContext: (n: Node, e: React.MouseEvent) => void
 }) {
   return (
@@ -285,11 +287,11 @@ export function TreeRows({
                   dir
                     ? (e) => {
                         e.stopPropagation()
-                        onToggle(n.key)
+                        onToggle(n, e)
                       }
                     : undefined
                 }
-                title={dir ? (open ? 'fold' : 'unfold') : undefined}
+                title={dir ? (open ? 'fold — shift: and everything under it' : 'unfold — shift: and everything under it') : undefined}
               >
                 {dir && <Chevron open={open} />}
               </span>
