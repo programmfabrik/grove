@@ -257,17 +257,32 @@ export function DiffTab({
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [filterFolds, setFilterFolds] = useState<Set<string>>(new Set())
   const filtering = terms.length > 0
-  // Shift takes the whole subtree with it, the way a list view's option-click
-  // does. Unfolding one directory at a time to reach a file six deep is six
-  // clicks, and folding one up again leaves every directory inside it open
-  // for the next time — so shift-fold marks them all folded, and the directory
-  // opens to one level of children rather than to wherever it was left.
+  // Shift is about what is INSIDE a directory, never the directory itself,
+  // which stays open through all of it — folding it as well would hide the
+  // very thing the click was asking to see.
+  //
+  //   open, something inside it open   →  shut everything inside
+  //   open, everything inside shut     →  open everything inside
+  //   shut                             →  open it and everything inside
+  //
+  // So one shift-click on a repo turns a tree of hundreds into a list of its
+  // top folders, and the next one puts it all back. A directory with no
+  // directories in it has no inside to speak of, and shift is an ordinary fold
+  // there rather than a click that does nothing.
   const toggle = (n: Node, e: React.MouseEvent) => {
-    const dirs = (x: Node): string[] => (x.file ? [] : [x.key, ...x.children.flatMap(dirs)])
+    const below = (x: Node): string[] =>
+      x.children.filter((c) => !c.file).flatMap((c) => [c.key, ...below(c)])
     ;(filtering ? setFilterFolds : setCollapsed)((prev) => {
       const next = new Set(prev)
-      const folding = !prev.has(n.key)
-      for (const k of e.shiftKey ? dirs(n) : [n.key]) folding ? next.add(k) : next.delete(k)
+      const shut = prev.has(n.key)
+      const inside = e.shiftKey ? below(n) : []
+      if (!inside.length) {
+        shut ? next.delete(n.key) : next.add(n.key)
+        return next
+      }
+      next.delete(n.key) // whichever way this goes, you are left looking into it
+      if (shut || inside.every((k) => prev.has(k))) inside.forEach((k) => next.delete(k))
+      else inside.forEach((k) => next.add(k))
       return next
     })
   }

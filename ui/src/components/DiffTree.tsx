@@ -291,7 +291,7 @@ export function TreeRows({
                       }
                     : undefined
                 }
-                title={dir ? (open ? 'fold — shift: and everything under it' : 'unfold — shift: and everything under it') : undefined}
+                title={dir ? (open ? 'fold — shift: fold what is inside it' : 'unfold — shift: and everything inside it') : undefined}
               >
                 {dir && <Chevron open={open} />}
               </span>
