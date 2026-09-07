@@ -166,8 +166,13 @@ export function DiffTab({
       wanted.current = { ...wanted.current, file: undefined }
       const found = askedFiles.filter(Boolean) as DiffFile[]
       if (found.length) return found.map(key)
-      // the opening file comes from what the tree will show
-      const first = firstLeaf(buildTree(unmergedOnly ? all.filter((f) => !f.merged) : all))
+      // the file opened on arrival is one that still needs reading, so it is
+      // taken from the same list the tree will show: a file the base branch
+      // already has is not a change, and a scope where every file has landed
+      // opens nothing at all
+      const pool =
+        unmergedOnly || all.some((f) => f.merged) ? all.filter((f) => !f.merged) : all
+      const first = firstLeaf(buildTree(pool))
       return first ? [key(first)] : []
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `reverted` is a
@@ -193,9 +198,29 @@ export function DiffTab({
     return () => clearInterval(t)
   }, [loadScopes, loadFiles])
 
+  // Files the base branch already holds are not changes to read. They are in
+  // this range because the range is measured from the FORK POINT — which is
+  // where a squash merge leaves it, however much of the branch the base has
+  // taken since — so the moment any of the work lands, the list stops being a
+  // list of things to review and becomes mostly history.
+  //
+  // So the ones that have landed are not listed, and how many is said in words
+  // above what remains. Not gated on ALL of them having landed: thirty of
+  // thirty-one is the ordinary case a week after a merge, and it is the one
+  // where a list of thirty-one is least worth reading. Nothing is lost — the
+  // button puts them back.
+  const landed = useMemo(() => (files || []).filter((f) => f.merged).length, [files])
+  const [showLanded, setShowLanded] = useState(false)
+  useEffect(() => setShowLanded(false), [c.name, sel?.repo, sel?.scope])
+  const hideLanded = landed > 0 && !showLanded
+
   // "unmerged only" reaches the tree too: a committed file whose change the
   // base branch already holds is history, like a landed commit
-  const listed = useMemo(() => (unmergedOnly ? (files || []).filter((f) => !f.merged) : files || []), [files, unmergedOnly])
+  const listed = useMemo(
+    () => (unmergedOnly || hideLanded ? (files || []).filter((f) => !f.merged) : files || []),
+    [files, unmergedOnly, hideLanded],
+  )
+  const allLanded = !!files?.length && landed === files.length
   const full = useMemo(() => buildTree(listed), [listed])
   const terms = useMemo(() => parseTerms(filter), [filter])
   const tree = useMemo(() => filterTree(full, terms), [full, terms])
@@ -230,11 +255,6 @@ export function DiffTab({
   const pickedSet = useMemo(() => new Set(picked), [picked])
   const selected = useMemo(() => (files || []).filter((f) => pickedSet.has(key(f))), [files, pickedSet])
   const scopeRepo = repos?.find((r) => r.name === sel?.repo)
-  // Every file here is one the base branch already holds. Thirty identical
-  // grey dots are a fact nobody counts, so it gets said once, in words: the
-  // range is only still listed because a squash merge leaves the fork point
-  // where it was.
-  const allLanded = !!files?.length && files.every((f) => f.merged)
   const scope = scopeRepo?.scopes.find((s) => s.id === sel?.scope)
 
   // A multi-selection opens its sections only while it is small. Keyed on the
@@ -354,10 +374,27 @@ export function DiffTab({
             filter={{ open: filesFilter, active: terms.length > 0, onToggle: toggleFilesFilter }}
           />
           {filesFilter && <PaneFilter value={filter} onChange={setFilter} placeholder="filter files…" />}
-          {allLanded && (
+          {landed > 0 && (
             <div className="landed-note">
-              All {files!.length} file{files!.length === 1 ? ' is' : 's are'} already in{' '}
-              <b>{scopeRepo?.base || 'the base branch'}</b> — this branch has nothing it lacks.
+              <p>
+                {allLanded ? (
+                  <>
+                    All {landed} file{landed === 1 ? ' is' : 's are'} already in{' '}
+                    <b>{scopeRepo?.base || 'the base branch'}</b> — this branch has nothing it lacks.
+                  </>
+                ) : (
+                  <>
+                    {landed} of {files!.length} files are already in{' '}
+                    <b>{scopeRepo?.base || 'the base branch'}</b>
+                    {showLanded
+                      ? '.'
+                      : ` — the other ${files!.length - landed} ${files!.length - landed === 1 ? 'is' : 'are'} below.`}
+                  </>
+                )}
+              </p>
+              <button className="btn-ghost" onClick={() => setShowLanded((v) => !v)}>
+                {showLanded ? `Hide the ${landed} again` : `Show the ${landed} anyway`}
+              </button>
             </div>
           )}
           <div className="sb-tree" ref={treeBox}>
@@ -417,6 +454,14 @@ export function DiffTab({
             <div className="small" style={{ marginTop: 6 }}>
               {scope?.label}
               {ignoreComments && ' · comments ignored'}
+            </div>
+          </div>
+        )}
+        {!error && hideLanded && !listed.length && (
+          <div className="empty">
+            nothing to review
+            <div className="small" style={{ marginTop: 6 }}>
+              {scopeRepo?.base || 'the base branch'} already has every change this branch made
             </div>
           </div>
         )}

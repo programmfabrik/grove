@@ -545,11 +545,13 @@ a { color: var(--accent-ink); }
    the range — the state a squash merge leaves, where the fork point stays put
    and the branch goes on listing everything it ever touched. */
 .landed-note {
-  padding: 7px 11px; font-size: 11.5px; line-height: 1.45; color: var(--dim);
+  padding: 9px 11px; font-size: 11.5px; line-height: 1.45; color: var(--dim);
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--dim) 6%, transparent);
 }
+.landed-note p { margin: 0 0 7px; }
 .landed-note b { color: var(--text); font-weight: 600; }
+.landed-note button { font-size: 11.5px; padding: 3px 9px; }
 
 /* the same fact in the checkout header, next to the count it contradicts */
 .landed { color: var(--dim); }
