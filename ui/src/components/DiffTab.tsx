@@ -115,9 +115,21 @@ export function DiffTab({
     localStorage.setItem('grove_md_rendered', v ? '1' : '0')
   }
 
+  // Which checkout is on screen RIGHT NOW, for the loads below to check
+  // against when they come back. Every one of them is a round trip, and
+  // clicking down a column of worktrees starts several — the one that answers
+  // last wins, and it is not always the one that was asked last. That is how a
+  // checkout ends up showing another checkout's scope list, with a scope it
+  // does not have selected: nothing failed, the answers simply landed out of
+  // order. Kept in a ref rather than a dependency because the point is to read
+  // it at the END, after the await, not to capture it at the start.
+  const showing = useRef(c.name)
+  showing.current = c.name
+
   const loadScopes = useCallback(
     async (initial: boolean) => {
       const r = await api.scopes(c.name)
+      if (showing.current !== c.name) return // answered for a checkout since left
       setRepos(r.repos)
       if (!initial) return
       const askedSub = wanted.current.sub
@@ -154,6 +166,7 @@ export function DiffTab({
   const loadFiles = useCallback(async () => {
     if (!sel || sel.name !== c.name) return // a stale scope from the row before
     const r = await api.diffFiles(c.name, sel.repo, sel.scope, ignoreComments)
+    if (showing.current !== c.name) return // and one that was current when asked
     const all = r.files || []
     setFiles((prev) => (sameFiles(prev, all) ? prev : all))
     setPicked((prev) => {
@@ -182,7 +195,13 @@ export function DiffTab({
   useEffect(() => {
     let cancelled = false
     loadScopes(false).catch(() => {}) // the scope counts moved too
-    loadFiles().catch((e) => !cancelled && setError(String(e)))
+    // clearing on success as well as setting on failure: an error box that
+    // only a checkout switch can dismiss outlives its cause, and the cause is
+    // usually a moment that has already passed
+    loadFiles().then(
+      () => !cancelled && setError(''),
+      (e) => !cancelled && setError(String(e)),
+    )
     return () => {
       cancelled = true
     }
@@ -253,7 +272,19 @@ export function DiffTab({
 
   const folds = filtering ? filterFolds : collapsed
   const pickedSet = useMemo(() => new Set(picked), [picked])
-  const selected = useMemo(() => (files || []).filter((f) => pickedSet.has(key(f))), [files, pickedSet])
+  // A file can only be read at the scope it was listed in, and `sel` belongs to
+  // the checkout it was chosen in. For one render after switching checkouts it
+  // is still the OLD one while c.name is already the new — and that is long
+  // enough, because the viewer below is handed c.name and sel.scope together.
+  // A file that exists in both checkouts stays picked across the switch, so it
+  // gets asked for as "this checkout, at that checkout's scope": a 400, and an
+  // error box that outlives the render that caused it. loadFiles has always
+  // guarded this pairing; the render never did.
+  const ready = !!sel && sel.name === c.name
+  const selected = useMemo(
+    () => (ready ? (files || []).filter((f) => pickedSet.has(key(f))) : []),
+    [ready, files, pickedSet],
+  )
   const scopeRepo = repos?.find((r) => r.name === sel?.repo)
   const scope = scopeRepo?.scopes.find((s) => s.id === sel?.scope)
 
