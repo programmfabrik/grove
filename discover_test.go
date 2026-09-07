@@ -93,11 +93,12 @@ func TestScanFindsMainCheckoutThroughSymlink(t *testing.T) {
 	if !samePath(paths[0], repos[0].Path) {
 		t.Errorf("main checkout is not first: got %q, want %q", paths[0], repos[0].Path)
 	}
-	main := scanCheckout(context.Background(), repos[0].Path, paths[0], "main")
+	baseTree := treeOf(repos[0].Path, "main")
+	main := scanCheckout(context.Background(), repos[0].Path, paths[0], "main", baseTree)
 	if !main.IsMain {
 		t.Errorf("IsMain false for the main checkout (%q vs repo %q)", paths[0], repos[0].Path)
 	}
-	linked := scanCheckout(context.Background(), repos[0].Path, paths[1], "main")
+	linked := scanCheckout(context.Background(), repos[0].Path, paths[1], "main", baseTree)
 	if linked.IsMain {
 		t.Errorf("IsMain true for the linked worktree %q", paths[1])
 	}

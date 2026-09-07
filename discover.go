@@ -37,6 +37,12 @@ type Checkout struct {
 	Ahead  int    `json:"ahead"`  // commits HEAD has and the base branch has not
 	Behind int    `json:"behind"` // commits the base branch has and HEAD has not
 	Dirty  int    `json:"dirty"`  // changed files incl. untracked
+	// Landed says the base branch already holds every change those Ahead
+	// commits carry, by content. A squash merge leaves exactly this: the
+	// branch is still N ahead, because its commits are not ancestors of the
+	// base, and the base has every line of them under one commit of its own.
+	// Without this the count reads as N commits of unmerged work.
+	Landed bool `json:"landed,omitempty"`
 }
 
 // baseBranch is what every worktree's commits are compared against: the
@@ -70,13 +76,15 @@ func (d *grove) refreshGit(ctx context.Context, repo string, st *repoState) {
 	if base == "" {
 		base = baseBranch(repo)
 	}
+	// read once for the whole repository: every checkout compares against it
+	baseTree := treeOf(repo, base)
 	out := make([]Checkout, len(paths))
 	var wg sync.WaitGroup
 	for i, p := range paths {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			out[i] = scanCheckout(ctx, repo, p, base)
+			out[i] = scanCheckout(ctx, repo, p, base, baseTree)
 		}()
 	}
 	wg.Wait()
@@ -146,7 +154,7 @@ func leadingInt(s string) (n, end int) {
 	return n, end
 }
 
-func scanCheckout(ctx context.Context, repo, path, base string) Checkout {
+func scanCheckout(ctx context.Context, repo, path, base, baseTree string) Checkout {
 	c := Checkout{
 		Name:   filepath.Base(path),
 		Path:   path,
@@ -171,6 +179,11 @@ func scanCheckout(ctx context.Context, repo, path, base string) Checkout {
 			c.Behind, _ = strconv.Atoi(f[0])
 			c.Ahead, _ = strconv.Atoi(f[1])
 		}
+	}
+	// only worth asking when there is a count to qualify, and it costs a
+	// merge — about a third of what the status below costs
+	if c.Ahead > 0 {
+		c.Landed = landedInto(path, base, baseTree)
 	}
 	// -uall so the count matches the file list the diff sidebar opens: without
 	// it an untracked directory counts as one entry, however many files it holds

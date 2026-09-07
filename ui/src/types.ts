@@ -17,6 +17,10 @@ export type Checkout = {
   ahead: number
   behind: number
   dirty: number
+  // the base branch already holds every change those ahead commits carry —
+  // what a squash merge leaves behind, where the count alone reads as work
+  // nobody has merged
+  landed?: boolean
 }
 
 // where a changed file's change lives. "staged" only occurs in the staged
@@ -31,7 +35,8 @@ export type Scope = {
   hint?: string
   sha?: string
   pushed?: boolean
-  // the base branch already contains this commit
+  // the base branch already holds everything in this scope: a commit it has,
+  // or — for the base range — a whole branch it took by squash merge
   merged?: boolean
   date?: string
   author?: string

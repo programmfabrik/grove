@@ -30,13 +30,15 @@ import (
 const commitScopeLimit = 20
 
 type Scope struct {
-	ID      string `json:"id"` // base | origin | staged | unstaged | commit:<sha>
-	Label   string `json:"label"`
-	Kind    string `json:"kind"`
-	Hint    string `json:"hint,omitempty"`   // the ref it compares against
-	Sha     string `json:"sha,omitempty"`    // commit scopes
-	Pushed  bool   `json:"pushed,omitempty"` // commit scopes: reachable from a remote
-	Merged  bool   `json:"merged,omitempty"` // commit scopes: the base branch has it
+	ID     string `json:"id"` // base | origin | staged | unstaged | commit:<sha>
+	Label  string `json:"label"`
+	Kind   string `json:"kind"`
+	Hint   string `json:"hint,omitempty"`   // the ref it compares against
+	Sha    string `json:"sha,omitempty"`    // commit scopes
+	Pushed bool   `json:"pushed,omitempty"` // commit scopes: reachable from a remote
+	// the base branch already holds everything in this scope: a commit it has,
+	// or — for the base range — a whole branch it took by squash merge
+	Merged  bool   `json:"merged,omitempty"`
 	Date    string `json:"date,omitempty"`   // commit scopes
 	Author  string `json:"author,omitempty"` // commit scopes
 	Body    string `json:"body,omitempty"`   // commit scopes: the message below the subject
@@ -132,11 +134,29 @@ func repoScopes(root, repoName, dashboardBase, primary string) ScopeRepo {
 	base := repoBase(root, repoName, dashboardBase, primary)
 	out.Upstream, _ = git(root, "rev-parse", "--verify", "--quiet", "--abbrev-ref", "@{upstream}")
 
+	// built first, because whether the base range has entirely landed depends
+	// on there being nothing uncommitted in it
+	staged := Scope{ID: "staged", Kind: "staged", Label: "staged", Hint: "index vs HEAD"}
+	fill(&staged, numstatArgs(root, "diff", "--cached", "--numstat"))
+	unstaged := Scope{ID: "unstaged", Kind: "unstaged", Label: "unstaged", Hint: "worktree vs index"}
+	fill(&unstaged, numstatArgs(root, "diff", "--numstat"))
+	if n, err := git(root, "ls-files", "--others", "--exclude-standard"); err == nil && n != "" {
+		unstaged.Files += len(strings.Split(n, "\n")) // untracked files live here too
+	}
+	clean := staged.Files == 0 && unstaged.Files == 0
+
 	// vs the base branch — omitted when this checkout IS the base branch
 	if forkPoint := mergeBaseOf(root, base); forkPoint != "HEAD" {
 		out.Base = base
 		s := Scope{ID: "base", Kind: "range", Label: "vs " + base, Hint: "committed + uncommitted"}
 		fill(&s, numstat(root, forkPoint, false))
+		// A squash merge leaves this scope listing every file the branch ever
+		// touched while the base already holds all of them, so say so on the
+		// row rather than leaving thirty identical grey dots to be counted.
+		if s.Files > 0 && clean && landedInto(root, base, treeOf(root, base)) {
+			s.Merged = true
+			s.Hint = "already in " + base
+		}
 		out.Scopes = append(out.Scopes, s)
 	}
 
@@ -147,13 +167,6 @@ func repoScopes(root, repoName, dashboardBase, primary string) ScopeRepo {
 		out.Scopes = append(out.Scopes, s)
 	}
 
-	staged := Scope{ID: "staged", Kind: "staged", Label: "staged", Hint: "index vs HEAD"}
-	fill(&staged, numstatArgs(root, "diff", "--cached", "--numstat"))
-	unstaged := Scope{ID: "unstaged", Kind: "unstaged", Label: "unstaged", Hint: "worktree vs index"}
-	fill(&unstaged, numstatArgs(root, "diff", "--numstat"))
-	if n, err := git(root, "ls-files", "--others", "--exclude-standard"); err == nil && n != "" {
-		unstaged.Files += len(strings.Split(n, "\n")) // untracked files live here too
-	}
 	out.Scopes = append(out.Scopes, staged, unstaged)
 
 	out.Scopes = append(out.Scopes, commitScopes(root, base)...)

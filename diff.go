@@ -419,18 +419,8 @@ func changedFiles(root, forkPoint string, ignore bool) ([]DiffFile, error) {
 // change is already there. Uncommitted work is never on ref and stays
 // unmarked, as does everything when the merge cannot be formed at all.
 func markLanded(root, ref string, files []DiffFile) {
-	cmd := exec.Command(gitExe, "merge-tree", "--write-tree", ref, "HEAD")
-	cmd.Dir = root
-	out, err := cmd.Output()
-	if err != nil {
-		// exit 1 is a merge with conflicts: the tree is still written, and a
-		// conflicted file still differs from ref, which reads as not there
-		if ee, ok := err.(*exec.ExitError); !ok || ee.ExitCode() != 1 {
-			return
-		}
-	}
-	tree, _, _ := strings.Cut(string(out), "\n")
-	if !plainSha(tree) {
+	tree := mergedTree(root, ref)
+	if tree == "" {
 		return
 	}
 	still, err := git(root, "diff", "--name-only", ref, tree)
@@ -446,6 +436,50 @@ func markLanded(root, ref string, files []DiffFile) {
 			files[i].Merged = true
 		}
 	}
+}
+
+// mergedTree merges HEAD onto ref in memory — no worktree, no index — and
+// returns the resulting tree. Empty when the merge cannot be formed at all.
+func mergedTree(root, ref string) string {
+	cmd := exec.Command(gitExe, "merge-tree", "--write-tree", ref, "HEAD")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		// exit 1 is a merge with conflicts: the tree is still written, and a
+		// conflicted file still differs from ref, which reads as not there
+		if ee, ok := err.(*exec.ExitError); !ok || ee.ExitCode() != 1 {
+			return ""
+		}
+	}
+	tree, _, _ := strings.Cut(string(out), "\n")
+	if !plainSha(tree) {
+		return ""
+	}
+	return tree
+}
+
+// landedInto reports whether merging this checkout into ref would leave ref
+// exactly as it is — every change here is already in it. That is the state a
+// SQUASH merge leaves behind, and the one no count can see: the branch's
+// commits are not ancestors of the base, so it still reads as N ahead, while
+// the base holds every line of them under one commit of its own.
+//
+// refTree is passed in rather than read here because it is the same for every
+// checkout of a repository, and this runs once per checkout.
+func landedInto(root, ref, refTree string) bool {
+	if ref == "" || refTree == "" {
+		return false
+	}
+	return mergedTree(root, ref) == refTree
+}
+
+// treeOf is a ref's tree, for landedInto to compare against.
+func treeOf(root, ref string) string {
+	t, err := git(root, "rev-parse", "--verify", "--quiet", ref+"^{tree}")
+	if err != nil {
+		return ""
+	}
+	return t
 }
 
 // numstat maps path -> {added, deleted} from a ref to the working tree.

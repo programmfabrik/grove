@@ -76,7 +76,13 @@ export function ScopeList({
           {!folded.has(r.name) && shown.map((s) => {
             const active = sel?.repo === r.name && sel?.scope === s.id
             const commit = s.kind === 'commit'
-            const state = commit ? commitState(s, r.base) : null
+            // a range the base already holds gets the same grey dot a landed
+            // commit does — it is the same fact about a whole branch
+            const state = commit
+              ? commitState(s, r.base)
+              : s.merged
+                ? { cls: 'sc-dot sc-pushed', title: `${r.base} already holds every change in this range` }
+                : null
             return (
               <div
                 key={s.id}

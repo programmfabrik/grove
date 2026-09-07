@@ -243,7 +243,11 @@ a { color: var(--accent-ink); }
   flex: none; display: flex; align-items: flex-start; gap: 10px;
   padding: 9px 14px; border-bottom: 1px solid var(--border); background: var(--card);
 }
-.sb-pick { flex: 1; min-width: 0; }
+/* `flex: 1` here meant a basis of ZERO: the head asked for nothing and took
+   only what the buttons left over, which for a long branch name was 161px of
+   a 1400px window. With a content basis the shortfall is shared between the
+   two instead of falling entirely on the facts. */
+.sb-pick { flex: 1 1 auto; min-width: 0; }
 .sb-title { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* below the head: file tree left, diff right, each with its own scroll */
@@ -348,7 +352,13 @@ a { color: var(--accent-ink); }
 .tw-stat .minus { color: var(--diff-del-ink); }
 /* the file picker: full width of the sidebar head, custom chevron so the
    arrow keeps its distance from a long path */
-.sb-sub { font-size: 11.5px; margin-top: 4px; }
+/* one line, always. The counts are the point of this line and a column of
+   single words is not a reading of them — when the head runs out of room it is
+   the buttons that give way, not the facts. */
+.sb-sub {
+  font-size: 11.5px; margin-top: 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .sb-sub .plus { color: var(--diff-add-ink); font-weight: 600; }
 .sb-sub .minus { color: var(--diff-del-ink); font-weight: 600; }
 .sb-body { flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: 8px 0 24px; }
@@ -531,6 +541,19 @@ a { color: var(--accent-ink); }
 .ctx-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
 .ctx-note { padding: 4px 9px 6px; font-size: 11px; }
 
+/* Said once, above the tree, when the base branch already holds every file in
+   the range — the state a squash merge leaves, where the fork point stays put
+   and the branch goes on listing everything it ever touched. */
+.landed-note {
+  padding: 7px 11px; font-size: 11.5px; line-height: 1.45; color: var(--dim);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--dim) 6%, transparent);
+}
+.landed-note b { color: var(--text); font-weight: 600; }
+
+/* the same fact in the checkout header, next to the count it contradicts */
+.landed { color: var(--dim); }
+
 /* the confirmation in front of the one destructive action */
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 300;
@@ -694,11 +717,17 @@ a { color: var(--accent-ink); }
    to grow the head and shove the diff down, which is a menu rearranging the
    room it is standing in. They are positioned out of flow and layered over
    whatever is beneath them. */
-.rb { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
-.rb-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.rb { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; min-width: 0; }
+/* nowrap: given less room these two used to stack, which makes the head
+   taller — the one thing it must not do. Now the branch name inside them
+   ellipses instead and the head stays one row. */
+.rb-row { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; justify-content: flex-end; min-width: 0; }
 
 /* one control split in two: the caret belongs to the button it modifies */
-.rb-split { position: relative; display: inline-flex; }
+.rb-split { position: relative; display: inline-flex; min-width: 0; }
+/* the verb and the count are the button; the branch name is what can be cut */
+.rb-split > .rb-go { display: inline-flex; align-items: baseline; gap: 4px; min-width: 0; }
+.rb-what { min-width: 2.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rb-split > .rb-go { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .rb-caret { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; padding: 4px 7px; }
 /* The two halves are one control and must look like it. Colouring the button
@@ -878,5 +907,12 @@ a { color: var(--accent-ink); }
 .set-recent-row:hover { background: var(--hover); color: var(--text); }
 
 /* the head's actions: two verbs and the remote bar, on one line */
-.sb-tools { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
+/* Shrinkable, and it shrinks BEFORE the head does: Push and Pull carry the
+   branch name, and a branch called inspect-datamodel-svg-81035 was taking two
+   thirds of the head and crushing the name and the counts into a column. The
+   verbs stay whole; the name inside them ellipses. */
+.sb-tools {
+  display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap;
+  justify-content: flex-end; margin-left: auto; min-width: 0;
+}
 .ctx-sep { height: 1px; background: var(--border); margin: 4px 0; }

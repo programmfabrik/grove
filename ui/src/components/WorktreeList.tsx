@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Checkout, Checks } from '../types'
 import { useScrollToActive } from '../lib/scroll'
+import { landedWhy } from '../lib/commit'
 import { where } from '../lib/window'
 import { Hits } from './Hits'
 import { RowMenu, onRowMenu, type RowMenuState } from './RowMenu'
@@ -49,10 +50,18 @@ export function WorktreeList({
             <span className="wl-name mono">
               <Hits text={c.name} terms={terms} />
             </span>
-            <span className="gitstat" title={`${c.ahead} ahead of ${base}, ${c.behind} behind, ${c.dirty} uncommitted`}>
+            <span
+              className="gitstat"
+              title={
+                landedWhy(c, base) ||
+                `${c.ahead} ahead of ${base}, ${c.behind} behind, ${c.dirty} uncommitted`
+              }
+            >
               {/* the glyph is a label, not a digit: it gets its own breathing
                   room rather than sitting flush against the count */}
-              <span className={c.ahead ? 'ahead on' : 'ahead'}>
+              {/* grey once the base has the content: green here says work
+                  nobody has merged, which after a squash merge is a lie */}
+              <span className={c.ahead && !c.landed ? 'ahead on' : 'ahead'}>
                 <i>↑</i>
                 {c.ahead}
               </span>

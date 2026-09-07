@@ -230,6 +230,11 @@ export function DiffTab({
   const pickedSet = useMemo(() => new Set(picked), [picked])
   const selected = useMemo(() => (files || []).filter((f) => pickedSet.has(key(f))), [files, pickedSet])
   const scopeRepo = repos?.find((r) => r.name === sel?.repo)
+  // Every file here is one the base branch already holds. Thirty identical
+  // grey dots are a fact nobody counts, so it gets said once, in words: the
+  // range is only still listed because a squash merge leaves the fork point
+  // where it was.
+  const allLanded = !!files?.length && files.every((f) => f.merged)
   const scope = scopeRepo?.scopes.find((s) => s.id === sel?.scope)
 
   // A multi-selection opens its sections only while it is small. Keyed on the
@@ -349,6 +354,12 @@ export function DiffTab({
             filter={{ open: filesFilter, active: terms.length > 0, onToggle: toggleFilesFilter }}
           />
           {filesFilter && <PaneFilter value={filter} onChange={setFilter} placeholder="filter files…" />}
+          {allLanded && (
+            <div className="landed-note">
+              All {files!.length} file{files!.length === 1 ? ' is' : 's are'} already in{' '}
+              <b>{scopeRepo?.base || 'the base branch'}</b> — this branch has nothing it lacks.
+            </div>
+          )}
           <div className="sb-tree" ref={treeBox}>
         {files === null && <div className="empty small">loading…</div>}
         {!!terms.length && !shown && files?.length ? (

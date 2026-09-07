@@ -147,7 +147,7 @@ export function RemoteBar({ name, onChanged }: { name: string; onChanged: () => 
             onClick={() => act('push')}
             title={repo.can_push ? `Fetch, then push ${repo.name} to ${pushTo}` : repo.blocked || 'nothing to push'}
           >
-            {done === 'Pushed' ? 'Pushed' : `Push ${which}`}
+            {done === 'Pushed' ? 'Pushed' : <>Push <span className="rb-what">{which}</span></>}
             {repo.ahead > 0 && <span className="rb-n">↑ {repo.ahead}</span>}
           </button>
           <button
@@ -183,7 +183,7 @@ export function RemoteBar({ name, onChanged }: { name: string; onChanged: () => 
             onClick={() => setAsking(true)}
             title={repo.can_pull ? `Bring in ${repo.behind} from ${repo.upstream}` : repo.pull_blocked || 'already up to date'}
           >
-            {done === 'Pulled' ? 'Pulled' : `Pull ${which}`}
+            {done === 'Pulled' ? 'Pulled' : <>Pull <span className="rb-what">{which}</span></>}
             {repo.behind > 0 && <span className="rb-n">↓ {repo.behind}</span>}
           </button>
           <button

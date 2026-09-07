@@ -36,9 +36,12 @@ func BenchmarkScanCheckout(b *testing.B) {
 	requireGit(b)
 	dir := initRepo(b, filepath.Join(b.TempDir(), "myrepo"))
 	ctx := context.Background()
+	// read once per repository in refreshGit, so it is not part of what a
+	// single checkout costs
+	baseTree := treeOf(dir, "main")
 	b.ResetTimer()
 	for b.Loop() {
-		if c := scanCheckout(ctx, dir, dir, "main"); c.Branch != "main" {
+		if c := scanCheckout(ctx, dir, dir, "main", baseTree); c.Branch != "main" {
 			b.Fatalf("branch = %q", c.Branch)
 		}
 	}

@@ -3,6 +3,7 @@ import { api } from '../api'
 import type { Checkout, DiffFile } from '../types'
 import { DiffTab } from './DiffTab'
 import { fmtDateTime } from '../lib/format'
+import { landedWhy } from '../lib/commit'
 import { ContextMenu, RevertDialog, type MenuState, type PendingRevert } from './RevertMenu'
 import { RemoteBar } from './RemoteBar'
 
@@ -46,9 +47,20 @@ export function Sidebar({
             <span className="sb-branch mono dim">{c.detached ? 'detached' : c.branch}</span>
           </div>
           <div className="sb-sub dim">
-            <span className={c.ahead ? 'on ahead' : ''}>
+            {/* a landed branch is still N ahead and the number is still green
+                for every other branch on the list, so it has to stop being
+                green here — and say why, since no count can show it */}
+            <span
+              className={c.ahead && !c.landed ? 'on ahead' : ''}
+              title={landedWhy(c, base)}
+            >
               {c.ahead} ahead of {base}
             </span>
+            {!!c.landed && (
+              <span className="landed" title={landedWhy(c, base)}>
+                {' · '}already landed
+              </span>
+            )}
             {' · '}
             <span className={c.behind ? 'on behind' : ''}>{c.behind} behind</span>
             {' · '}
