@@ -280,6 +280,64 @@ func combine(total int, runs []CheckRun) Checks {
 // pushed being tested" is the question, and a local commit nobody has seen is
 // not being tested by anybody. A checkout with no upstream is simply absent
 // from the answer.
+// pushedTips is what each local branch has ON THE REMOTE, by branch name.
+//
+// `@{upstream}` is not that, and taking it for that is how a branch nobody had
+// ever pushed came to wear main's green tick. `git checkout -b work
+// origin/main` sets branch.work.merge to refs/heads/main, so work's upstream
+// tip is MAIN's commit — GitHub answers about main, truthfully, and the answer
+// gets shown against work. A branch is only being tested if its OWN remote
+// branch exists, which is what an upstream whose remoteref is refs/heads/<its
+// own name> means. %(upstream:remoteref) says so directly, rather than by
+// cutting a remote's name off the front of a string that may contain slashes
+// on both sides of the join.
+//
+// The rarity this turns away is a branch pushed under another name
+// (`git push origin work:other`), which loses its badge. That is the safe
+// direction to be wrong in: a missing tick is looked into, a green one that
+// belongs to another branch is believed.
+//
+// Read once for the repository, not once per checkout: refs are shared by
+// every worktree of a repo, so this is two git calls where it used to be one
+// per checkout on a thirty-second timer.
+func pushedTips(repo string) map[string]string {
+	heads, err := git(repo, "for-each-ref", "--format=%(refname:short)\x1f%(upstream:remoteref)\x1f%(upstream:short)", "refs/heads/")
+	if err != nil {
+		return nil
+	}
+	want := map[string]string{} // branch -> the remote-tracking ref that is ITS own
+	for _, line := range strings.Split(heads, "\n") {
+		f := strings.Split(line, "\x1f")
+		if len(f) != 3 || f[2] == "" {
+			continue // no upstream at all: never pushed
+		}
+		if strings.TrimPrefix(f[1], "refs/heads/") != f[0] {
+			continue // tracks another branch, whose checks are not this one's
+		}
+		want[f[0]] = f[2]
+	}
+	if len(want) == 0 {
+		return nil
+	}
+	remotes, err := git(repo, "for-each-ref", "--format=%(refname:short)\x1f%(objectname)", "refs/remotes/")
+	if err != nil {
+		return nil
+	}
+	at := map[string]string{}
+	for _, line := range strings.Split(remotes, "\n") {
+		if name, sha, ok := strings.Cut(line, "\x1f"); ok {
+			at[name] = sha
+		}
+	}
+	tips := map[string]string{}
+	for branch, ref := range want {
+		if sha := at[ref]; sha != "" {
+			tips[branch] = sha
+		}
+	}
+	return tips
+}
+
 func (d *grove) handleChecks(w http.ResponseWriter, r *http.Request) {
 	repo := r.URL.Query().Get("repo")
 	if repo == "" {
@@ -317,12 +375,13 @@ func (d *grove) handleChecks(w http.ResponseWriter, r *http.Request) {
 		checks Checks
 		err    string
 	}
+	tips := pushedTips(repo)
 	ch := make(chan answer, len(checkouts))
 	asked := 0
 	for _, c := range checkouts {
-		sha, err := git(c.Path, "rev-parse", "@{upstream}")
-		if err != nil || sha == "" {
-			continue // nothing pushed to ask about
+		sha := tips[c.Branch]
+		if c.Detached || sha == "" {
+			continue // nothing this checkout has pushed as itself
 		}
 		asked++
 		go func(checkout, sha string) {
