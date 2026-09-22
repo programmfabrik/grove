@@ -112,7 +112,10 @@ export function RevertDialog({
   // every time as noise, and most of the time a submodule sitting on another
   // commit is clean inside.
   const subs = pending.action === 'discard' ? pending.files.filter((f) => f.submodule) : []
-  const losing = subs.filter((f) => f.submodule_dirty)
+  // git will not move a submodule over uncommitted work — it refuses, so this
+  // is not a warning about losing anything, it is one about nothing happening
+  const blocked = subs.filter((f) => f.submodule_dirty)
+  const onBranch = subs.filter((f) => f.submodule_branch && !f.submodule_dirty)
   const restores = pending.files.filter((f) => !deletes.includes(f) && !subs.includes(f))
   return (
     <div className="modal-backdrop" onClick={onCancel}>
@@ -138,12 +141,24 @@ export function RevertDialog({
                   repository records — a checkout inside {subs.length === 1 ? 'it' : 'them'}, not a file restored.
                 </p>
               )}
-              {!!losing.length && (
+              {!!onBranch.length && (
+                <p className="dim">
+                  {onBranch.length === 1 ? (
+                    <>
+                      It is on <span className="mono">{onBranch[0].submodule_branch}</span> and is left detached at
+                      that commit — the branch stays, but nothing is standing on it.
+                    </>
+                  ) : (
+                    <>{onBranch.length} of them are on a branch and are left detached at that commit.</>
+                  )}
+                </p>
+              )}
+              {!!blocked.length && (
                 <p className="modal-warn">
-                  {losing.length === 1
-                    ? 'It has uncommitted changes to tracked files, and those go with it.'
-                    : `${losing.length} of them have uncommitted changes to tracked files, and those go with them.`}{' '}
-                  Untracked files are left where they are.
+                  {blocked.length === 1
+                    ? 'It has uncommitted changes to tracked files inside it, and git will not move it across them.'
+                    : `${blocked.length} of them have uncommitted changes inside, and git will not move them across those.`}{' '}
+                  Nothing is overwritten — the discard simply fails until those are committed or discarded in there.
                 </p>
               )}
               {!!deletes.length && (
@@ -159,7 +174,12 @@ export function RevertDialog({
               <li key={f.path} className={deletes.includes(f) ? 'minus' : undefined}>
                 {f.path}
                 {deletes.includes(f) && ' — delete'}
-                {f.submodule && (f.submodule_dirty ? ' — submodule, uncommitted work inside' : ' — submodule')}
+                {f.submodule &&
+                  (f.submodule_dirty
+                    ? ' — submodule, uncommitted work inside'
+                    : f.submodule_branch
+                      ? ` — submodule on ${f.submodule_branch}`
+                      : ' — submodule')}
               </li>
             ))}
             {pending.files.length > 12 && <li className="dim">…and {pending.files.length - 12} more</li>}

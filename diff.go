@@ -86,10 +86,15 @@ type DiffFile struct {
 	// has to say so before it happens.
 	Submodule bool `json:"submodule,omitempty"`
 	// SubmoduleDirty is set when there is uncommitted work to TRACKED files
-	// inside it — the only case where discarding it destroys anything, and so
-	// the only case worth a warning. A warning that fires every time is read
-	// every time as noise.
+	// inside it. Git refuses to move a submodule over such work rather than
+	// overwriting it, so this is not a warning about loss — it is a warning
+	// that the discard will not happen.
 	SubmoduleDirty bool `json:"submodule_dirty,omitempty"`
+	// SubmoduleBranch is the branch checked out INSIDE it, when there is one.
+	// Putting a submodule back to a recorded commit detaches it, and a
+	// submodule that is somebody's working branch — a linked worktree, which
+	// is how they are set up here — is a place somebody is standing.
+	SubmoduleBranch string `json:"submodule_branch,omitempty"`
 }
 
 // submoduleWork says which of these submodules hold uncommitted changes to
@@ -288,10 +293,16 @@ func scopeFiles(root string, spec scopeSpec, ignore bool) ([]DiffFile, error) {
 				here = append(here, files[i].Path)
 			}
 		}
-		if work := submoduleWork(root, here); len(work) > 0 {
-			for i := range files {
-				files[i].SubmoduleDirty = files[i].Submodule && work[files[i].Path]
+		work := submoduleWork(root, here)
+		for i := range files {
+			if !files[i].Submodule {
+				continue
 			}
+			files[i].SubmoduleDirty = work[files[i].Path]
+			// asked of the submodule itself; there is no field of the parent's
+			// status that carries it
+			files[i].SubmoduleBranch, _ = git(filepath.Join(root, files[i].Path),
+				"symbolic-ref", "--quiet", "--short", "HEAD")
 		}
 	}
 	return files, nil

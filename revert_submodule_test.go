@@ -164,3 +164,102 @@ func TestSubmoduleDirtyIsOnlyWorkThatWouldBeLost(t *testing.T) {
 		t.Error("committed inside the submodule: the commit moved, nothing is uncommitted")
 	}
 }
+
+// Every submodule here is a linked WORKTREE of a clone of its own rather than
+// a checkout under .git/modules, and `git restore --recurse-submodules` does
+// not merely fail on those — it aborts, BUG: submodule.c:2294, whenever the
+// submodule's name is not a suffix of its git dir. A submodule one directory
+// down is enough for that, which is all of them.
+func TestDiscardASubmoduleThatIsAWorktree(t *testing.T) {
+	dir := t.TempDir()
+
+	lib := initRepo(t, filepath.Join(dir, "lib"))
+	first, _ := git(lib, "rev-parse", "HEAD")
+	gitRun(t, lib, "checkout", "-q", "-b", "feature")
+	write(t, lib, "a.txt", "on the branch\n")
+	gitRun(t, lib, "commit", "-q", "-am", "branch work")
+	gitRun(t, lib, "checkout", "-q", "main") // so the branch is free to be taken
+
+	parent := initRepo(t, filepath.Join(dir, "parent"))
+	gitRun(t, parent, "-c", "protocol.file.allow=always", "submodule", "add", "-q", lib, "resources/lib")
+	sub := filepath.Join(parent, "resources", "lib")
+	identify(t, sub)
+	gitRun(t, sub, "checkout", "-q", first)
+	gitRun(t, parent, "commit", "-q", "-am", "lib at first")
+
+	// swap the checkout for a worktree of the clone, which is the setup here
+	if err := os.RemoveAll(sub); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, lib, "worktree", "add", sub, "feature")
+	identify(t, sub)
+	if st, _ := git(parent, "status", "--porcelain"); st == "" {
+		t.Fatal("the parent sees no change — bad fixture")
+	}
+
+	files, err := scopeFiles(parent, scopeSpec{kind: "unstaged"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *DiffFile
+	for i := range files {
+		if files[i].Path == "resources/lib" {
+			found = &files[i]
+		}
+	}
+	if found == nil {
+		t.Fatal("resources/lib is not in the file list")
+	}
+	if found.SubmoduleBranch != "feature" {
+		t.Errorf("submodule branch = %q, want feature — the dialog cannot say what it costs", found.SubmoduleBranch)
+	}
+
+	discardVia(t, dir, "parent", "resources/lib")
+
+	if at, _ := git(sub, "rev-parse", "HEAD"); at != first {
+		t.Errorf("submodule is at %s, want the recorded %s", at[:8], first[:8])
+	}
+	if st, _ := git(parent, "status", "--porcelain"); st != "" {
+		t.Errorf("parent still dirty: %q", st)
+	}
+	// the branch is left behind, not deleted: nothing of it is lost
+	if out, err := git(lib, "rev-parse", "--verify", "--quiet", "feature"); err != nil || out == "" {
+		t.Error("the branch was taken away as well as stepped off")
+	}
+}
+
+// Git refuses to move a submodule across uncommitted work rather than writing
+// over it. Grove passes that refusal on: the discard fails and the work stays.
+func TestDiscardWillNotWriteOverWorkInsideASubmodule(t *testing.T) {
+	dir := t.TempDir()
+	lib := initRepo(t, filepath.Join(dir, "lib"))
+	first, _ := git(lib, "rev-parse", "HEAD")
+	write(t, lib, "a.txt", "moved on\n")
+	gitRun(t, lib, "commit", "-q", "-am", "second")
+
+	parent := initRepo(t, filepath.Join(dir, "parent"))
+	gitRun(t, parent, "-c", "protocol.file.allow=always", "submodule", "add", "-q", lib, "resources/lib")
+	sub := filepath.Join(parent, "resources", "lib")
+	identify(t, sub)
+	gitRun(t, sub, "checkout", "-q", first)
+	gitRun(t, parent, "commit", "-q", "-am", "lib at first")
+	gitRun(t, sub, "checkout", "-q", "main")
+
+	write(t, sub, "a.txt", "PRECIOUS\n") // uncommitted, inside the submodule
+
+	d := &grove{opt: options{dir: normPath(dir), refresh: time.Minute}, state: map[string]*repoState{}}
+	body, _ := json.Marshal(revertRequest{Name: "parent", Action: "discard", Paths: []string{"resources/lib"}})
+	w := httptest.NewRecorder()
+	d.handleRevert(w, httptest.NewRequest(http.MethodPost, "/api/revert", bytes.NewReader(body)))
+
+	if w.Code == http.StatusOK {
+		t.Error("the discard reported success over uncommitted work inside the submodule")
+	}
+	got, err := os.ReadFile(filepath.Join(sub, "a.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "PRECIOUS\n" {
+		t.Errorf("a.txt = %q — the work inside the submodule was written over", got)
+	}
+}

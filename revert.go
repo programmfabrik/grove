@@ -74,28 +74,58 @@ func (d *grove) handleRevert(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// A gitlink is not restored, it is checked out, and the command for that is
+	// not the command for a file — so the two are separated here rather than
+	// trusting the caller to have done it.
+	paths, gitlinks := req.Paths, []string(nil)
+	if req.Action == "discard" {
+		subs := map[string]bool{}
+		for _, p := range submodulePaths(root) {
+			subs[p] = true
+		}
+		if len(subs) > 0 {
+			paths = nil
+			for _, p := range req.Paths {
+				if subs[filepath.ToSlash(filepath.Clean(p))] {
+					gitlinks = append(gitlinks, p)
+				} else {
+					paths = append(paths, p)
+				}
+			}
+		}
+	}
+
 	done := 0
-	if len(req.Paths) > 0 {
+	if len(paths) > 0 {
 		flag := "--staged"
 		if req.Action == "discard" {
 			flag = "--worktree"
 		}
-		args := []string{"restore", flag}
-		if req.Action == "discard" {
-			// Without this a gitlink is restored to exactly where it already
-			// is: git walks the path, sees a submodule, declines to enter it,
-			// and exits 0 having done nothing — so "discard" on a submodule
-			// was a button that reported success and changed not one thing.
-			// With it, the submodule is checked out at the commit this
-			// repository records, which is what discarding its change means.
-			args = append(args, "--recurse-submodules")
-		}
-		args = append(append(args, "--"), req.Paths...)
+		args := append([]string{"restore", flag, "--"}, paths...)
 		if out, err := git(root, args...); err != nil {
 			writeErr(w, http.StatusInternalServerError, fmt.Errorf("git restore: %w: %s", err, out))
 			return
 		}
-		done += len(req.Paths)
+		done += len(paths)
+	}
+
+	// `git restore --worktree` walks a gitlink, declines to enter it and exits
+	// 0 having done nothing, so discard used to report success and change
+	// nothing. Its --recurse-submodules does enter, but aborts outright —
+	// BUG: submodule.c:2294 — whenever the submodule's NAME is not a suffix of
+	// its git dir, which is every submodule that is a linked worktree of a
+	// clone of its own rather than a checkout under .git/modules.
+	//
+	// `submodule update --checkout` handles both layouts, and refuses over
+	// uncommitted work inside rather than writing across it, which is the
+	// behaviour to want from something called discard.
+	if len(gitlinks) > 0 {
+		args := append([]string{"submodule", "update", "--checkout", "--"}, gitlinks...)
+		if out, err := git(root, args...); err != nil {
+			writeErr(w, http.StatusInternalServerError, fmt.Errorf("git submodule update: %w: %s", err, out))
+			return
+		}
+		done += len(gitlinks)
 	}
 
 	// an untracked file has nothing to restore from; discarding it is deleting
