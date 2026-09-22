@@ -140,16 +140,29 @@ func repoScopes(root, repoName, dashboardBase, primary string) ScopeRepo {
 	fill(&staged, numstatArgs(root, "diff", "--cached", "--numstat"))
 	unstaged := Scope{ID: "unstaged", Kind: "unstaged", Label: "unstaged", Hint: "worktree vs index"}
 	fill(&unstaged, numstatArgs(root, "diff", "--numstat"))
+	// A file in no commit and no index is in no diff either, so every scope
+	// that covers uncommitted work has to be told about it separately — the
+	// ranges below as well as this one, whose lists already hold it because
+	// they are built from `status -uall` rather than from a diff.
+	untracked := 0
 	if n, err := git(root, "ls-files", "--others", "--exclude-standard"); err == nil && n != "" {
-		unstaged.Files += len(strings.Split(n, "\n")) // untracked files live here too
+		untracked = len(strings.Split(n, "\n"))
 	}
+	unstaged.Files += untracked
 	clean := staged.Files == 0 && unstaged.Files == 0
 
-	// vs the base branch — omitted when this checkout IS the base branch
-	if forkPoint := mergeBaseOf(root, base); forkPoint != "HEAD" {
+	// vs the base branch — omitted when this checkout IS that branch, and only
+	// then. The test used to be whether the fork point was HEAD, which is also
+	// true of a branch that has no commits of its OWN yet: one cut this morning
+	// and worked in all day has everything uncommitted and nothing committed,
+	// and "vs main" — the one scope that shows the lot — was the one scope
+	// missing from it.
+	if base != "" && out.Branch != base {
+		forkPoint := mergeBaseOf(root, base)
 		out.Base = base
 		s := Scope{ID: "base", Kind: "range", Label: "vs " + base, Hint: "committed + uncommitted"}
 		fill(&s, numstat(root, forkPoint, false))
+		s.Files += untracked
 		// A squash merge leaves this scope listing every file the branch ever
 		// touched while the base already holds all of them, so say so on the
 		// row rather than leaving thirty identical grey dots to be counted.
@@ -164,6 +177,7 @@ func repoScopes(root, repoName, dashboardBase, primary string) ScopeRepo {
 	if from := upstreamForkPoint(root); from != "" {
 		s := Scope{ID: "origin", Kind: "range", Label: "vs " + out.Upstream, Hint: "unpushed + uncommitted"}
 		fill(&s, numstat(root, from, false))
+		s.Files += untracked
 		out.Scopes = append(out.Scopes, s)
 	}
 
