@@ -27,6 +27,10 @@ func TestDiscardMovesASubmoduleBack(t *testing.T) {
 	parent := initRepo(t, filepath.Join(dir, "parent"))
 	gitRun(t, parent, "-c", "protocol.file.allow=always", "submodule", "add", "-q", lib, "lib")
 	sub := filepath.Join(parent, "lib")
+	// a submodule's working tree is a repository of its OWN, with its config in
+	// the parent's .git/modules — nothing initRepo set on the repo it was
+	// cloned from reaches it
+	identify(t, sub)
 	gitRun(t, sub, "checkout", "-q", first) // the parent is to record the FIRST
 	gitRun(t, parent, "commit", "-q", "-am", "lib at first")
 
@@ -124,6 +128,7 @@ func TestSubmoduleDirtyIsOnlyWorkThatWouldBeLost(t *testing.T) {
 	gitRun(t, parent, "-c", "protocol.file.allow=always", "submodule", "add", "-q", lib, "lib")
 	gitRun(t, parent, "commit", "-q", "-m", "add lib")
 	sub := filepath.Join(parent, "lib")
+	identify(t, sub)
 
 	holdsWork := func() bool {
 		t.Helper()
