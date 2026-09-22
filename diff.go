@@ -85,6 +85,42 @@ type DiffFile struct {
 	// Discarding one is a checkout inside it, not a line restored, and the UI
 	// has to say so before it happens.
 	Submodule bool `json:"submodule,omitempty"`
+	// SubmoduleDirty is set when there is uncommitted work to TRACKED files
+	// inside it — the only case where discarding it destroys anything, and so
+	// the only case worth a warning. A warning that fires every time is read
+	// every time as noise.
+	SubmoduleDirty bool `json:"submodule_dirty,omitempty"`
+}
+
+// submoduleWork says which of these submodules hold uncommitted changes to
+// tracked files — what a discard would take with it. Untracked files survive
+// the checkout and are not counted; that is measured, not assumed.
+//
+// Asked of the PARENT in one path-limited status rather than by running git
+// inside each submodule: porcelain=v2 spells the state out as S<c><m><u>, and
+// m is M exactly when there is modified content in there. Nothing runs at all
+// unless a gitlink is among the files on screen, which is the rare case.
+func submoduleWork(root string, paths []string) map[string]bool {
+	if len(paths) == 0 {
+		return nil
+	}
+	out, err := git(root, append([]string{"status", "--porcelain=v2", "--"}, paths...)...)
+	if err != nil {
+		return nil
+	}
+	dirty := map[string]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		// "1 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <path>" — split to exactly
+		// nine so a path with spaces in it arrives whole
+		f := strings.SplitN(line, " ", 9)
+		if len(f) != 9 || f[0] != "1" {
+			continue
+		}
+		if st := f[2]; len(st) == 4 && st[0] == 'S' && st[2] == 'M' {
+			dirty[f[8]] = true
+		}
+	}
+	return dirty
 }
 
 type DiffList struct {
@@ -245,8 +281,17 @@ func scopeFiles(root string, spec scopeSpec, ignore bool) ([]DiffFile, error) {
 		for _, p := range subs {
 			at[p] = true
 		}
+		var here []string
 		for i := range files {
-			files[i].Submodule = at[files[i].Path]
+			if at[files[i].Path] {
+				files[i].Submodule = true
+				here = append(here, files[i].Path)
+			}
+		}
+		if work := submoduleWork(root, here); len(work) > 0 {
+			for i := range files {
+				files[i].SubmoduleDirty = files[i].Submodule && work[files[i].Path]
+			}
 		}
 	}
 	return files, nil

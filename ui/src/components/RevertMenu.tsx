@@ -107,8 +107,12 @@ export function RevertDialog({
   const deletes = pending.action === 'discard' ? pending.files.filter((f) => f.untracked) : []
   // A submodule is not a file and does not lose "every uncommitted change" —
   // it is checked out at another commit, which is a different and larger thing
-  // to have done to it. It gets its own sentence.
+  // to have done to it. It gets its own sentence, and the RED one only when
+  // there is work in there to lose: a warning that fires every time is read
+  // every time as noise, and most of the time a submodule sitting on another
+  // commit is clean inside.
   const subs = pending.action === 'discard' ? pending.files.filter((f) => f.submodule) : []
+  const losing = subs.filter((f) => f.submodule_dirty)
   const restores = pending.files.filter((f) => !deletes.includes(f) && !subs.includes(f))
   return (
     <div className="modal-backdrop" onClick={onCancel}>
@@ -129,10 +133,17 @@ export function RevertDialog({
                 </p>
               )}
               {!!subs.length && (
-                <p className="modal-warn">
+                <p>
                   {subs.length === 1 ? 'A submodule goes' : `${subs.length} submodules go`} back to the commit this
-                  repository records. Uncommitted changes to tracked files inside{' '}
-                  {subs.length === 1 ? 'it' : 'them'} go with it — that is a whole repository, not a file.
+                  repository records — a checkout inside {subs.length === 1 ? 'it' : 'them'}, not a file restored.
+                </p>
+              )}
+              {!!losing.length && (
+                <p className="modal-warn">
+                  {losing.length === 1
+                    ? 'It has uncommitted changes to tracked files, and those go with it.'
+                    : `${losing.length} of them have uncommitted changes to tracked files, and those go with them.`}{' '}
+                  Untracked files are left where they are.
                 </p>
               )}
               {!!deletes.length && (
@@ -148,7 +159,7 @@ export function RevertDialog({
               <li key={f.path} className={deletes.includes(f) ? 'minus' : undefined}>
                 {f.path}
                 {deletes.includes(f) && ' — delete'}
-                {f.submodule && ' — submodule'}
+                {f.submodule && (f.submodule_dirty ? ' — submodule, uncommitted work inside' : ' — submodule')}
               </li>
             ))}
             {pending.files.length > 12 && <li className="dim">…and {pending.files.length - 12} more</li>}

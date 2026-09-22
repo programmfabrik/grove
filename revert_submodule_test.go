@@ -60,6 +60,11 @@ func TestDiscardMovesASubmoduleBack(t *testing.T) {
 		if !found.Submodule {
 			t.Errorf("%s: lib is a gitlink and is not marked as one", kind)
 		}
+		// clean inside: there is nothing to warn about, and saying so anyway
+		// is how a warning stops being read
+		if found.SubmoduleDirty {
+			t.Errorf("%s: lib is clean inside, but is marked as holding work", kind)
+		}
 	}
 
 	discardVia(t, dir, "parent", "lib")
@@ -106,5 +111,51 @@ func discardVia(t testing.TB, dir, checkout string, paths ...string) {
 	d.handleRevert(w, httptest.NewRequest(http.MethodPost, "/api/revert", bytes.NewReader(body)))
 	if w.Code != http.StatusOK {
 		t.Fatalf("POST /api/revert: %d %s", w.Code, w.Body.String())
+	}
+}
+
+// The red warning is for the case that earns it. An untracked file inside a
+// submodule survives the checkout, so it is not work about to be lost; a
+// modified tracked file is, and so is a staged one.
+func TestSubmoduleDirtyIsOnlyWorkThatWouldBeLost(t *testing.T) {
+	dir := t.TempDir()
+	lib := initRepo(t, filepath.Join(dir, "lib"))
+	parent := initRepo(t, filepath.Join(dir, "parent"))
+	gitRun(t, parent, "-c", "protocol.file.allow=always", "submodule", "add", "-q", lib, "lib")
+	gitRun(t, parent, "commit", "-q", "-m", "add lib")
+	sub := filepath.Join(parent, "lib")
+
+	holdsWork := func() bool {
+		t.Helper()
+		files, err := scopeFiles(parent, scopeSpec{kind: "unstaged"}, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range files {
+			if f.Path == "lib" {
+				return f.SubmoduleDirty
+			}
+		}
+		return false
+	}
+
+	write(t, sub, "untracked.txt", "not in any commit\n")
+	if holdsWork() {
+		t.Error("an untracked file survives the checkout, so nothing is lost by it")
+	}
+
+	write(t, sub, "a.txt", "modified\n") // a.txt is tracked, from initRepo
+	if !holdsWork() {
+		t.Error("a modified tracked file IS lost, and was not reported")
+	}
+
+	gitRun(t, sub, "add", "a.txt")
+	if !holdsWork() {
+		t.Error("staging it does not make it safe")
+	}
+
+	gitRun(t, sub, "commit", "-q", "-m", "mine")
+	if holdsWork() {
+		t.Error("committed inside the submodule: the commit moved, nothing is uncommitted")
 	}
 }

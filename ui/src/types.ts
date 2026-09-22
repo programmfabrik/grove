@@ -64,6 +64,9 @@ export type DiffFile = {
   // a gitlink: not a file but a whole repository, sitting on a different
   // commit than this one records
   submodule?: boolean
+  // …and holding uncommitted work to tracked files, which is the only case
+  // where discarding it destroys anything
+  submodule_dirty?: boolean
   // set when the browser can render the file itself: image | pdf | video | audio
   preview?: string
   added: number
