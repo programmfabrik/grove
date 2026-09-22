@@ -105,7 +105,11 @@ export function RevertDialog({
   onCancel: () => void
 }) {
   const deletes = pending.action === 'discard' ? pending.files.filter((f) => f.untracked) : []
-  const restores = pending.files.filter((f) => !deletes.includes(f))
+  // A submodule is not a file and does not lose "every uncommitted change" —
+  // it is checked out at another commit, which is a different and larger thing
+  // to have done to it. It gets its own sentence.
+  const subs = pending.action === 'discard' ? pending.files.filter((f) => f.submodule) : []
+  const restores = pending.files.filter((f) => !deletes.includes(f) && !subs.includes(f))
   return (
     <div className="modal-backdrop" onClick={onCancel}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -124,6 +128,13 @@ export function RevertDialog({
                   change — the working tree goes back to the index.
                 </p>
               )}
+              {!!subs.length && (
+                <p className="modal-warn">
+                  {subs.length === 1 ? 'A submodule goes' : `${subs.length} submodules go`} back to the commit this
+                  repository records. Uncommitted changes to tracked files inside{' '}
+                  {subs.length === 1 ? 'it' : 'them'} go with it — that is a whole repository, not a file.
+                </p>
+              )}
               {!!deletes.length && (
                 <p className="modal-warn">
                   {deletes.length === 1 ? '1 untracked file is DELETED' : `${deletes.length} untracked files are DELETED`}
@@ -137,6 +148,7 @@ export function RevertDialog({
               <li key={f.path} className={deletes.includes(f) ? 'minus' : undefined}>
                 {f.path}
                 {deletes.includes(f) && ' — delete'}
+                {f.submodule && ' — submodule'}
               </li>
             ))}
             {pending.files.length > 12 && <li className="dim">…and {pending.files.length - 12} more</li>}

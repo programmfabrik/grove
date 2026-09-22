@@ -80,6 +80,11 @@ type DiffFile struct {
 	// Merged marks a committed file whose change the branch this range is
 	// measured against already holds, found by content (markLanded).
 	Merged bool `json:"merged,omitempty"`
+	// Submodule marks a gitlink: not a file but a whole repository, whose
+	// "change" is that it sits on a different commit than this one records.
+	// Discarding one is a checkout inside it, not a line restored, and the UI
+	// has to say so before it happens.
+	Submodule bool `json:"submodule,omitempty"`
 }
 
 type DiffList struct {
@@ -226,6 +231,28 @@ func (d *grove) handleDiff(w http.ResponseWriter, r *http.Request) {
 // committed and uncommitted work — the others are one side of git by
 // definition, and their origin marker says which.
 func scopeFiles(root string, spec scopeSpec, ignore bool) ([]DiffFile, error) {
+	files, err := scopeFileList(root, spec, ignore)
+	if err != nil {
+		return nil, err
+	}
+	// A gitlink among them is a whole repository, not a file, and what can be
+	// done to it is not what can be done to a file — discarding one is a
+	// checkout inside it. Marked here rather than in any one lister because
+	// all four kinds can turn one up, and marking it in the range scope alone
+	// is how the uncommitted view went on offering a file's actions for it.
+	if subs := submodulePaths(root); len(subs) > 0 {
+		at := map[string]bool{}
+		for _, p := range subs {
+			at[p] = true
+		}
+		for i := range files {
+			files[i].Submodule = at[files[i].Path]
+		}
+	}
+	return files, nil
+}
+
+func scopeFileList(root string, spec scopeSpec, ignore bool) ([]DiffFile, error) {
 	switch spec.kind {
 	case "range":
 		files, err := changedFiles(root, spec.from, ignore)

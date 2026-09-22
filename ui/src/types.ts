@@ -61,6 +61,9 @@ export type DiffFile = {
   path: string
   status: string
   origin: DiffOrigin
+  // a gitlink: not a file but a whole repository, sitting on a different
+  // commit than this one records
+  submodule?: boolean
   // set when the browser can render the file itself: image | pdf | video | audio
   preview?: string
   added: number

@@ -80,7 +80,17 @@ func (d *grove) handleRevert(w http.ResponseWriter, r *http.Request) {
 		if req.Action == "discard" {
 			flag = "--worktree"
 		}
-		args := append([]string{"restore", flag, "--"}, req.Paths...)
+		args := []string{"restore", flag}
+		if req.Action == "discard" {
+			// Without this a gitlink is restored to exactly where it already
+			// is: git walks the path, sees a submodule, declines to enter it,
+			// and exits 0 having done nothing — so "discard" on a submodule
+			// was a button that reported success and changed not one thing.
+			// With it, the submodule is checked out at the commit this
+			// repository records, which is what discarding its change means.
+			args = append(args, "--recurse-submodules")
+		}
+		args = append(append(args, "--"), req.Paths...)
 		if out, err := git(root, args...); err != nil {
 			writeErr(w, http.StatusInternalServerError, fmt.Errorf("git restore: %w: %s", err, out))
 			return
