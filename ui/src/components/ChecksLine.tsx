@@ -14,10 +14,16 @@ import { fmtAgo, fmtDur } from '../lib/format'
 // checksHere says whether the checks ran on what is checked out. They are asked
 // for the branch's PUSHED tip — the only commit a remote can have run anything
 // on — and the moment a commit is made on top of it, or the branch falls behind
-// its remote, that is a different commit from the one in the worktree. The
-// result is still true; it is just not about this checkout, and a green branch
-// name with thirty-eight untested commits under it is the one thing a CI colour
-// must never say. head is the checkout's abbreviated hash, a prefix of the sha.
+// its remote, that is a different commit from the one in the worktree.
+//
+// The two halves of the line answer different questions, so only one of them
+// depends on this. The dot is the last run on the remote — red, amber, green,
+// whatever is checked out — because that is a fact about the remote. The branch
+// NAME is a claim about this checkout, and it takes the colour only when what is
+// checked out is the very commit that ran: a green name over thirty-eight
+// untested commits is the one thing a CI colour must never say. Commits only —
+// uncommitted work is not what anybody pushes. head is the checkout's
+// abbreviated hash, a prefix of the sha.
 export function checksHere(checks: Checks | undefined, head: string): boolean {
   return !!checks?.sha && !!head && checks.sha.startsWith(head)
 }
@@ -43,8 +49,7 @@ export function checkSummary(checks: Checks): string {
 export function ChecksLine({ checks, head, onOpen }: { checks?: Checks; head: string; onOpen: () => void }) {
   if (!checks || checks.state === 'none') return null
   const passed = (checks.runs ?? []).filter((r) => r.status === 'completed').length
-  // still worth showing — when the pushed commit was last tested is a fact —
-  // but grey, and saying which commit it was, since it is not this one
+  // the dot keeps its colour; the tooltip says why the branch name has none
   const here = checksHere(checks, head)
   return (
     <button
@@ -60,7 +65,7 @@ export function ChecksLine({ checks, head, onOpen }: { checks?: Checks; head: st
       }
     >
       <span className="ck-when">{checkSummary(checks)}</span>
-      <span className={'ci ' + (here ? 'ci-' + checks.state : 'ci-elsewhere')} />
+      <span className={'ci ci-' + checks.state} />
     </button>
   )
 }
@@ -94,7 +99,7 @@ export function ChecksDialog({
         </h2>
         <div className="modal-body">
           <p className="dim ck-head">
-            <span className={'ci ' + (here ? 'ci-' + checks.state : 'ci-elsewhere')} />
+            <span className={'ci ci-' + checks.state} />
             <span>
               {checkSummary(checks)} · <span className="mono">{(checks.sha ?? '').slice(0, 8)}</span>, the
               commit the remote has

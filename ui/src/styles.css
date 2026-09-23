@@ -850,10 +850,8 @@ a { color: var(--accent-ink); }
 .ci-success { background: var(--running); }
 .ci-failure { background: var(--danger); }
 .ci-pending { background: var(--warn); animation: ci-run 1.4s ease-in-out infinite; }
-/* checks that ran on some other commit than the one checked out: the pushed tip
-   of a branch with commits on top of it, or one its remote has moved past. The
-   same grey as a landed commit — a true fact, and not this checkout's. */
-.ci-elsewhere { background: var(--dim); opacity: 0.45; }
+/* the dialog's note when the checks ran on another commit than the one checked
+   out — the dot keeps its colour, the branch name does not */
 .ck-elsewhere { font-size: 12.5px; margin: -4px 0 12px; }
 @keyframes ci-run { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
 

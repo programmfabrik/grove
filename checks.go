@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -171,13 +172,35 @@ func (c *checker) get(ctx context.Context, owner, repo, sha string) (Checks, str
 	return checks, msg
 }
 
-func fetchChecks(ctx context.Context, token, owner, repo, sha string) (Checks, error) {
-	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
-	defer cancel()
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/commits/%s/check-runs?per_page=30", owner, repo, sha)
+// githubAPI is where the checks are asked for; a test points it at a fake.
+var githubAPI = "https://api.github.com"
+
+// commitEvents are the workflow triggers that mean "this commit arrived", and a
+// run started by one of them is CI for the commit. GitHub also runs workflows
+// that something else set off — a branch deleted, a schedule, a dispatch —
+// against whatever the default branch's tip happens to be, and files them under
+// that commit as though they were its own. fylr's main tip collected nine
+// supervisor_branch_destroy runs in one day that way, one per branch anybody
+// deleted, and the latest of them became "main passed an hour ago · 9h 46m" —
+// nine hours after its real CI had finished, and a duration no run ever had.
+//
+// An allowlist, so that an event added to GitHub later is left out until it is
+// known to be one: a missing badge is looked into, a wrong one is believed.
+var commitEvents = map[string]bool{
+	"push":                true,
+	"pull_request":        true,
+	"pull_request_target": true,
+	"merge_group":         true,
+}
+
+// errNotOnGitHub is a 404: the commit is not on GitHub, or this account cannot
+// see the repository. Neither is worth an error on the dashboard.
+var errNotOnGitHub = errors.New("not on GitHub")
+
+func ghGet(ctx context.Context, token, url string, into any) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return Checks{}, err
+		return err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -185,41 +208,101 @@ func fetchChecks(ctx context.Context, token, owner, repo, sha string) (Checks, e
 	req.Header.Set("User-Agent", "grove/"+version)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return Checks{}, err
+		return err
 	}
 	defer res.Body.Close()
 	switch res.StatusCode {
 	case http.StatusOK:
+		return json.NewDecoder(res.Body).Decode(into)
 	case http.StatusNotFound:
-		// the commit is not on GitHub, or this account cannot see the repo
-		return Checks{}, nil
+		return errNotOnGitHub
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return Checks{}, fmt.Errorf("GitHub refused the credential (%s)", res.Status)
+		return fmt.Errorf("GitHub refused the credential (%s)", res.Status)
 	default:
-		return Checks{}, fmt.Errorf("GitHub: %s", res.Status)
+		return fmt.Errorf("GitHub: %s", res.Status)
 	}
+}
+
+// suitesNotFromCommit are the check suites on a commit whose workflow run was
+// started by something other than the commit arriving. A suite that is not an
+// Actions run at all — a third-party CI reporting through the checks API — is
+// not in the list, and so is kept.
+func suitesNotFromCommit(ctx context.Context, token, owner, repo, sha string) (map[int64]bool, error) {
 	var body struct {
-		Total     int `json:"total_count"`
-		CheckRuns []struct {
-			Name        string `json:"name"`
-			Status      string `json:"status"`
-			Conclusion  string `json:"conclusion"`
-			StartedAt   string `json:"started_at"`
-			CompletedAt string `json:"completed_at"`
-			HTMLURL     string `json:"html_url"`
-		} `json:"check_runs"`
+		Runs []struct {
+			Event        string `json:"event"`
+			CheckSuiteID int64  `json:"check_suite_id"`
+		} `json:"workflow_runs"`
 	}
-	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
-		return Checks{}, err
+	url := fmt.Sprintf("%s/repos/%s/%s/actions/runs?head_sha=%s&per_page=100", githubAPI, owner, repo, sha)
+	if err := ghGet(ctx, token, url, &body); err != nil {
+		return nil, err
 	}
-	runs := make([]CheckRun, 0, len(body.CheckRuns))
-	for _, r := range body.CheckRuns {
-		runs = append(runs, CheckRun{
-			Name: r.Name, Status: r.Status, Conclusion: r.Conclusion,
-			StartedAt: r.StartedAt, CompletedAt: r.CompletedAt, URL: r.HTMLURL,
-		})
+	not := map[int64]bool{}
+	for _, r := range body.Runs {
+		if !commitEvents[r.Event] {
+			not[r.CheckSuiteID] = true
+		}
 	}
-	c := combine(body.Total, runs)
+	return not, nil
+}
+
+// checkRunPages caps the paging. A hundred check runs a page, and a commit with
+// five hundred on it is a commit nobody reads a summary of anyway.
+const checkRunPages = 5
+
+func fetchChecks(ctx context.Context, token, owner, repo, sha string) (Checks, error) {
+	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	defer cancel()
+
+	// Without Actions access — a token scoped to checks alone — every suite
+	// counts, as it always did: an occasional stray run in the summary is a
+	// smaller loss than no summary at all.
+	notCI, err := suitesNotFromCommit(ctx, token, owner, repo, sha)
+	if errors.Is(err, errNotOnGitHub) {
+		return Checks{}, nil
+	}
+
+	var runs []CheckRun
+	for page := 1; page <= checkRunPages; page++ {
+		var body struct {
+			Total     int `json:"total_count"`
+			CheckRuns []struct {
+				Name        string `json:"name"`
+				Status      string `json:"status"`
+				Conclusion  string `json:"conclusion"`
+				StartedAt   string `json:"started_at"`
+				CompletedAt string `json:"completed_at"`
+				HTMLURL     string `json:"html_url"`
+				CheckSuite  struct {
+					ID int64 `json:"id"`
+				} `json:"check_suite"`
+			} `json:"check_runs"`
+		}
+		// Paged, where it used to take the first thirty: runs that are not CI
+		// pile up on a default branch's tip all day, and the real ones were
+		// liable to be the ones pushed off the end.
+		url := fmt.Sprintf("%s/repos/%s/%s/commits/%s/check-runs?per_page=100&page=%d", githubAPI, owner, repo, sha, page)
+		if err := ghGet(ctx, token, url, &body); err != nil {
+			if errors.Is(err, errNotOnGitHub) {
+				return Checks{}, nil
+			}
+			return Checks{}, err
+		}
+		for _, r := range body.CheckRuns {
+			if notCI[r.CheckSuite.ID] {
+				continue
+			}
+			runs = append(runs, CheckRun{
+				Name: r.Name, Status: r.Status, Conclusion: r.Conclusion,
+				StartedAt: r.StartedAt, CompletedAt: r.CompletedAt, URL: r.HTMLURL,
+			})
+		}
+		if page*100 >= body.Total || len(body.CheckRuns) == 0 {
+			break
+		}
+	}
+	c := combine(len(runs), runs)
 	c.Sha = sha
 	if c.Total > 0 {
 		c.URL = fmt.Sprintf("https://github.com/%s/%s/commit/%s/checks", owner, repo, sha)
