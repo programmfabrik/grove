@@ -79,10 +79,10 @@ export function WorktreeList({
             {/* the branch takes the colour, because the state is about the
                 branch: a coloured dot on its own says a state exists without
                 saying whose */}
-            <span className={'wl-branch dim' + checkClass(checks?.[c.name])} title={c.branch}>
+            <span className={'wl-branch dim' + checkClass(checks?.[c.name], c.head.hash)} title={c.branch}>
               <Hits text={c.detached ? 'detached' : c.branch} terms={terms} />
             </span>
-            <ChecksLine checks={checks?.[c.name]} onOpen={() => onChecks(c.name)} />
+            <ChecksLine checks={checks?.[c.name]} head={c.head.hash} onOpen={() => onChecks(c.name)} />
           </div>
         </div>
       ))}

@@ -11,8 +11,19 @@ import { fmtAgo, fmtDur } from '../lib/format'
 // the colour: green is worth knowing, green four days ago is worth knowing
 // something else about.
 
-export function checkClass(checks?: Checks): string {
-  if (!checks || checks.state === 'none') return ''
+// checksHere says whether the checks ran on what is checked out. They are asked
+// for the branch's PUSHED tip — the only commit a remote can have run anything
+// on — and the moment a commit is made on top of it, or the branch falls behind
+// its remote, that is a different commit from the one in the worktree. The
+// result is still true; it is just not about this checkout, and a green branch
+// name with thirty-eight untested commits under it is the one thing a CI colour
+// must never say. head is the checkout's abbreviated hash, a prefix of the sha.
+export function checksHere(checks: Checks | undefined, head: string): boolean {
+  return !!checks?.sha && !!head && checks.sha.startsWith(head)
+}
+
+export function checkClass(checks: Checks | undefined, head: string): string {
+  if (!checks || checks.state === 'none' || !checksHere(checks, head)) return ''
   return ' ck-' + checks.state
 }
 
@@ -29,9 +40,12 @@ export function checkSummary(checks: Checks): string {
   return [when, took].filter(Boolean).join(' · ')
 }
 
-export function ChecksLine({ checks, onOpen }: { checks?: Checks; onOpen: () => void }) {
+export function ChecksLine({ checks, head, onOpen }: { checks?: Checks; head: string; onOpen: () => void }) {
   if (!checks || checks.state === 'none') return null
   const passed = (checks.runs ?? []).filter((r) => r.status === 'completed').length
+  // still worth showing — when the pushed commit was last tested is a fact —
+  // but grey, and saying which commit it was, since it is not this one
+  const here = checksHere(checks, head)
   return (
     <button
       className="ck-line"
@@ -39,10 +53,14 @@ export function ChecksLine({ checks, onOpen }: { checks?: Checks; onOpen: () => 
         e.stopPropagation() // the row underneath selects a worktree
         onOpen()
       }}
-      title={`${passed} of ${checks.total} checks finished — click for all of them`}
+      title={
+        here
+          ? `${passed} of ${checks.total} checks finished — click for all of them`
+          : `These ran on ${(checks.sha ?? '').slice(0, 9)}, the commit the remote has — not on ${head}, which is checked out here`
+      }
     >
       <span className="ck-when">{checkSummary(checks)}</span>
-      <span className={'ci ci-' + checks.state} />
+      <span className={'ci ' + (here ? 'ci-' + checks.state : 'ci-elsewhere')} />
     </button>
   )
 }
@@ -51,14 +69,17 @@ export function ChecksLine({ checks, onOpen }: { checks?: Checks; onOpen: () => 
 export function ChecksDialog({
   name,
   checks,
+  head,
   desktop,
   onClose,
 }: {
   name: string
   checks: Checks
+  head: string
   desktop: boolean
   onClose: () => void
 }) {
+  const here = checksHere(checks, head)
   const go = (url?: string) => {
     if (!url) return
     // a window has no tabs to open one in; the browser you are signed in to does
@@ -73,12 +94,18 @@ export function ChecksDialog({
         </h2>
         <div className="modal-body">
           <p className="dim ck-head">
-            <span className={'ci ci-' + checks.state} />
+            <span className={'ci ' + (here ? 'ci-' + checks.state : 'ci-elsewhere')} />
             <span>
               {checkSummary(checks)} · <span className="mono">{(checks.sha ?? '').slice(0, 8)}</span>, the
               commit the remote has
             </span>
           </p>
+          {!here && head && (
+            <p className="ck-elsewhere">
+              Checked out in {name} is <span className="mono">{head}</span>, which is not the commit these ran
+              on, so none of this is a verdict on it.
+            </p>
+          )}
           <div className="ck-runs">
             {(checks.runs ?? []).map((r, i) => {
               const start = r.started_at ? Date.parse(r.started_at) : NaN

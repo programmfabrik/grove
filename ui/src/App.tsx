@@ -258,6 +258,7 @@ export default function App() {
         <ChecksDialog
           name={showChecks}
           checks={checks[showChecks]}
+          head={checkouts.find((c) => c.name === showChecks)?.head.hash ?? ''}
           desktop={!!update?.desktop}
           onClose={() => setShowChecks(null)}
         />
