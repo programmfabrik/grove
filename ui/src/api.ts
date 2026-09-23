@@ -8,6 +8,12 @@ async function j<T>(r: Response): Promise<T> {
   return r.json() as Promise<T>
 }
 
+// what the reader has asked the diff to leave out
+export type Ignoring = { comments?: boolean; whitespace?: boolean }
+
+const ignoreQuery = (ig: Ignoring) =>
+  (ig.comments ? '&ignore_comments=1' : '') + (ig.whitespace ? '&ignore_whitespace=1' : '')
+
 export const api = {
   repos: (): Promise<{ dir: string; repos: Repo[] }> =>
     fetch('api/repos').then((r) => j<{ dir: string; repos: Repo[] }>(r)),
@@ -18,10 +24,10 @@ export const api = {
     fetch(`api/scopes?name=${encodeURIComponent(name)}`).then((r) =>
       j<{ name: string; repos: ScopeRepo[] }>(r),
     ),
-  diffFiles: (name: string, repo: string, scope: string, ignoreComments?: boolean): Promise<{ files: DiffFile[] }> =>
+  diffFiles: (name: string, repo: string, scope: string, ig: Ignoring = {}): Promise<{ files: DiffFile[] }> =>
     fetch(
       `api/diff?name=${encodeURIComponent(name)}&repo=${encodeURIComponent(repo)}&scope=${encodeURIComponent(scope)}` +
-        (ignoreComments ? '&ignore_comments=1' : ''),
+        ignoreQuery(ig),
     ).then((r) => j<{ files: DiffFile[] }>(r)),
   diffText: (
     name: string,
@@ -29,12 +35,12 @@ export const api = {
     scope: string,
     file: string,
     untracked?: boolean,
-    ignoreComments?: boolean,
+    ig: Ignoring = {},
   ): Promise<{ diff: string; total: number; truncated?: boolean }> =>
     fetch(
       `api/diff?name=${encodeURIComponent(name)}&repo=${encodeURIComponent(repo)}&scope=${encodeURIComponent(scope)}` +
         `&file=${encodeURIComponent(file)}${untracked ? '&untracked=1' : ''}` +
-        (ignoreComments ? '&ignore_comments=1' : ''),
+        ignoreQuery(ig),
     ).then((r) => j<{ diff: string; total: number; truncated?: boolean }>(r)),
   // the one write: unstage or discard, on paths the caller can see
   revert: (body: {

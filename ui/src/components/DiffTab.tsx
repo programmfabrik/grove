@@ -81,6 +81,21 @@ export function DiffTab({
     setIgnoreComments(v)
     localStorage.setItem('grove_ignore_comments', v ? '1' : '0')
   }
+  // "ignore whitespace" is git's -w: a trailing space, an indent, a line
+  // ending — none of them there any more, in the list or in the diff. The
+  // other half of the answer to "what changed on this line": either see the
+  // invisible change drawn (the default) or have it gone.
+  const [ignoreWhitespace, setIgnoreWhitespace] = useState(
+    () => localStorage.getItem('grove_ignore_whitespace') === '1',
+  )
+  const toggleWhitespace = (v: boolean) => {
+    setIgnoreWhitespace(v)
+    localStorage.setItem('grove_ignore_whitespace', v ? '1' : '0')
+  }
+  const ignoring = useMemo(
+    () => ({ comments: ignoreComments, whitespace: ignoreWhitespace }),
+    [ignoreComments, ignoreWhitespace],
+  )
   // each column's filter folds under its header and stays the way it was
   // left; closing one clears its text, the switches keep their setting
   const [scopeQ, setScopeQ] = useState('')
@@ -165,7 +180,7 @@ export function DiffTab({
 
   const loadFiles = useCallback(async () => {
     if (!sel || sel.name !== c.name) return // a stale scope from the row before
-    const r = await api.diffFiles(c.name, sel.repo, sel.scope, ignoreComments)
+    const r = await api.diffFiles(c.name, sel.repo, sel.scope, ignoring)
     if (showing.current !== c.name) return // and one that was current when asked
     const all = r.files || []
     setFiles((prev) => (sameFiles(prev, all) ? prev : all))
@@ -190,7 +205,7 @@ export function DiffTab({
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `reverted` is a
     // trigger, not an input: a revert changed the tree this list describes
-  }, [c.name, sel, ignoreComments, reverted, unmergedOnly])
+  }, [c.name, sel, ignoring, reverted, unmergedOnly])
 
   useEffect(() => {
     let cancelled = false
@@ -403,7 +418,7 @@ export function DiffTab({
               onCollapse={() => setScopeFold(true)}
               filter={{
                 open: scopeFilter,
-                active: scopeTerms.length > 0 || unmergedOnly || ignoreComments,
+                active: scopeTerms.length > 0 || unmergedOnly || ignoreComments || ignoreWhitespace,
                 onToggle: toggleScopeFilter,
               }}
             />
@@ -419,6 +434,13 @@ export function DiffTab({
                 <label className="toggle pane-toggle" title="hide changes whose lines are all comments (git -I)">
                   <input type="checkbox" checked={ignoreComments} onChange={(e) => toggleIgnore(e.target.checked)} />
                   ignore comments
+                </label>
+                <label
+                  className="toggle pane-toggle"
+                  title="hide changes that are only whitespace — a trailing space, an indent, a line ending (git -w)"
+                >
+                  <input type="checkbox" checked={ignoreWhitespace} onChange={(e) => toggleWhitespace(e.target.checked)} />
+                  ignore whitespace
                 </label>
               </PaneFilter>
             )}
@@ -537,6 +559,7 @@ export function DiffTab({
             <div className="small" style={{ marginTop: 6 }}>
               {scope?.label}
               {ignoreComments && ' · comments ignored'}
+              {ignoreWhitespace && ' · whitespace ignored'}
             </div>
           </div>
         )}
@@ -604,7 +627,7 @@ export function DiffTab({
                       repo={sel.repo}
                       scope={sel.scope}
                       file={f}
-                      ignoreComments={ignoreComments}
+                      ignoring={ignoring}
                       poll={poll}
                     />
                   )}

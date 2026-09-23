@@ -14,5 +14,6 @@
     "strict": true,
     "noUnusedLocals": false
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
 }

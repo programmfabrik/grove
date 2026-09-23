@@ -56,4 +56,5 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
       - run: cd ui && npm ci && npm run build
+      - run: cd ui && npm test
       - run: git diff --quiet -- ui/dist || echo "::warning::ui/dist differs from a fresh build — run make ui and commit it"

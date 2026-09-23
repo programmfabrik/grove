@@ -385,6 +385,16 @@ a { color: var(--accent-ink); }
   overflow-wrap: anywhere; /* a minified line or a long URL has no spaces to break at */
 }
 .dl-add { background: var(--diff-add); }
+/* The part of a replaced line that actually changed, laid over the line's own
+   colour — and inside it, and only there, whitespace drawn: · a space, → a tab,
+   ␍ a Windows line ending, ⍽ a no-break space, ◦ anything else invisible. A
+   diff that removes a trailing space otherwise shows two identical lines. */
+.dl-chg { border-radius: 2px; }
+.dl-del .dl-chg { background: color-mix(in srgb, var(--diff-del-ink) 24%, transparent); }
+.dl-add .dl-chg { background: color-mix(in srgb, var(--diff-add-ink) 24%, transparent); }
+.ws { opacity: .8; }
+.dl-del .ws { color: var(--diff-del-ink); }
+.dl-add .ws { color: var(--diff-add-ink); }
 .dl-add .dl-sign { color: var(--diff-add-ink); }
 .dl-del { background: var(--diff-del); }
 .dl-del .dl-sign { color: var(--diff-del-ink); }

@@ -48,7 +48,7 @@ func TestDiscardMovesASubmoduleBack(t *testing.T) {
 		if kind == "range" {
 			spec.from = "HEAD"
 		}
-		files, err := scopeFiles(parent, spec, false)
+		files, err := scopeFiles(parent, spec, ignoring{})
 		if err != nil {
 			t.Fatalf("%s: %v", kind, err)
 		}
@@ -132,7 +132,7 @@ func TestSubmoduleDirtyIsOnlyWorkThatWouldBeLost(t *testing.T) {
 
 	holdsWork := func() bool {
 		t.Helper()
-		files, err := scopeFiles(parent, scopeSpec{kind: "unstaged"}, false)
+		files, err := scopeFiles(parent, scopeSpec{kind: "unstaged"}, ignoring{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -197,7 +197,7 @@ func TestDiscardASubmoduleThatIsAWorktree(t *testing.T) {
 		t.Fatal("the parent sees no change — bad fixture")
 	}
 
-	files, err := scopeFiles(parent, scopeSpec{kind: "unstaged"}, false)
+	files, err := scopeFiles(parent, scopeSpec{kind: "unstaged"}, ignoring{})
 	if err != nil {
 		t.Fatal(err)
 	}

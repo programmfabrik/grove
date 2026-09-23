@@ -48,14 +48,27 @@ var commentIgnores = []string{
 	`^[[:space:]]*<!--`, // HTML, XML
 }
 
-// ignoreArgs are the -I flags for a git invocation, or nothing.
-func ignoreArgs(ignore bool) []string {
-	if !ignore {
-		return nil
+// ignoring is what the reader has asked a diff to leave out. Each is a flag
+// git already has; what they share is the consequence for the file list: git's
+// --numstat honours them while --name-status does not, so a file that is
+// missing from the stats is one with nothing left to show, and leaves.
+type ignoring struct {
+	comments   bool // a -I per comment syntax, commentIgnores
+	whitespace bool // -w: any change in whitespace, line endings included
+}
+
+func (ig ignoring) any() bool { return ig.comments || ig.whitespace }
+
+// args are the flags for a git invocation, or nothing.
+func (ig ignoring) args() []string {
+	var args []string
+	if ig.whitespace {
+		args = append(args, "-w")
 	}
-	args := make([]string, 0, len(commentIgnores)*2)
-	for _, re := range commentIgnores {
-		args = append(args, "-I", re)
+	if ig.comments {
+		for _, re := range commentIgnores {
+			args = append(args, "-I", re)
+		}
 	}
 	return args
 }
@@ -238,7 +251,10 @@ func (d *grove) handleDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ignore := q.Get("ignore_comments") == "1"
+	ignore := ignoring{
+		comments:   q.Get("ignore_comments") == "1",
+		whitespace: q.Get("ignore_whitespace") == "1",
+	}
 	if file := q.Get("file"); file != "" {
 		if !safeRepoPath(file) {
 			writeErr(w, http.StatusBadRequest, fmt.Errorf("path must stay inside the checkout"))
@@ -271,7 +287,7 @@ func (d *grove) handleDiff(w http.ResponseWriter, r *http.Request) {
 // scopeFiles lists the files a scope covers. Only the range scopes merge
 // committed and uncommitted work — the others are one side of git by
 // definition, and their origin marker says which.
-func scopeFiles(root string, spec scopeSpec, ignore bool) ([]DiffFile, error) {
+func scopeFiles(root string, spec scopeSpec, ignore ignoring) ([]DiffFile, error) {
 	files, err := scopeFileList(root, spec, ignore)
 	if err != nil {
 		return nil, err
@@ -308,7 +324,7 @@ func scopeFiles(root string, spec scopeSpec, ignore bool) ([]DiffFile, error) {
 	return files, nil
 }
 
-func scopeFileList(root string, spec scopeSpec, ignore bool) ([]DiffFile, error) {
+func scopeFileList(root string, spec scopeSpec, ignore ignoring) ([]DiffFile, error) {
 	switch spec.kind {
 	case "range":
 		files, err := changedFiles(root, spec.from, ignore)
@@ -346,8 +362,8 @@ func scopeFileList(root string, spec scopeSpec, ignore bool) ([]DiffFile, error)
 
 // nameStatus lists files from any git command that prints --name-status, with
 // the stats of the matching --numstat run.
-func nameStatus(root, origin string, ignore bool, args ...string) ([]DiffFile, error) {
-	out, err := git(root, append(args, ignoreArgs(ignore)...)...)
+func nameStatus(root, origin string, ignore ignoring, args ...string) ([]DiffFile, error) {
+	out, err := git(root, append(args, ignore.args()...)...)
 	if err != nil {
 		return nil, fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 	}
@@ -358,7 +374,11 @@ func nameStatus(root, origin string, ignore bool, args ...string) ([]DiffFile, e
 			numArgs[i] = "--numstat"
 		}
 	}
-	stats := numstatArgs(root, append(numArgs, ignoreArgs(ignore)...)...)
+	stats := numstatArgs(root, append(numArgs, ignore.args()...)...)
+	plain := stats
+	if ignore.any() {
+		plain = numstatArgs(root, numArgs...)
+	}
 
 	var files []DiffFile
 	for _, line := range strings.Split(out, "\n") {
@@ -373,9 +393,10 @@ func nameStatus(root, origin string, ignore bool, args ...string) ([]DiffFile, e
 		}
 		if s, ok := stats[path]; ok {
 			file.Added, file.Deleted = s[0], s[1]
-		} else if ignore {
-			// --name-status ignores -I, --numstat honours it: a file missing
-			// from the stats has nothing left once comments are dropped
+		} else if _, had := plain[path]; had && ignore.any() {
+			// --name-status ignores -I and -w, --numstat honours both: a file
+			// that HAD stats and has none now has nothing left once they are
+			// applied. One missing from both was never about what is ignored.
 			continue
 		}
 		files = append(files, file)
@@ -421,10 +442,10 @@ func mergeBaseOf(root, base string) string {
 // list, each marked with where its change lives. -uall expands untracked
 // directories to their files, so a fresh directory is a list of files in the
 // tree instead of one unopenable entry.
-func changedFiles(root, forkPoint string, ignore bool) ([]DiffFile, error) {
+func changedFiles(root, forkPoint string, ignore ignoring) ([]DiffFile, error) {
 	committed := map[string]string{} // path -> status letter
 	if forkPoint != "HEAD" {
-		out, err := git(root, append([]string{"diff", "--name-status", forkPoint + "..HEAD"}, ignoreArgs(ignore)...)...)
+		out, err := git(root, append([]string{"diff", "--name-status", forkPoint + "..HEAD"}, ignore.args()...)...)
 		if err != nil {
 			return nil, fmt.Errorf("git diff --name-status: %w", err)
 		}
@@ -467,6 +488,15 @@ func changedFiles(root, forkPoint string, ignore bool) ([]DiffFile, error) {
 	// gets its branch counts, an uncommitted-only file its working counts, and
 	// a file that is both gets the sum a reviewer actually cares about
 	stats := numstat(root, forkPoint, ignore)
+	// What is in the stats without the flags, to tell "nothing survives what
+	// is being ignored" from "nothing was there to begin with": a file added
+	// on the branch and deleted again is in no numstat at all, flag or none,
+	// and used to disappear the moment ANY ignore was switched on — for a
+	// reason that had nothing to do with comments or with whitespace.
+	plain := stats
+	if ignore.any() {
+		plain = numstat(root, forkPoint, ignoring{})
+	}
 	files := make([]DiffFile, 0, len(order))
 	for _, path := range order {
 		code, dirty := working[path]
@@ -482,8 +512,8 @@ func changedFiles(root, forkPoint string, ignore bool) ([]DiffFile, error) {
 		}
 		if s, ok := stats[path]; ok {
 			f.Added, f.Deleted = s[0], s[1]
-		} else if ignore && !f.Untracked {
-			// nothing of this file survives once comments are dropped (an
+		} else if _, had := plain[path]; had && ignore.any() && !f.Untracked {
+			// nothing of this file survives what is being ignored (an
 			// untracked file is in no diff at all, so it is never in stats)
 			continue
 		}
@@ -566,8 +596,8 @@ func treeOf(root, ref string) string {
 }
 
 // numstat maps path -> {added, deleted} from a ref to the working tree.
-func numstat(root, from string, ignore bool) map[string][2]int {
-	return numstatArgs(root, append([]string{"diff", from, "--numstat"}, ignoreArgs(ignore)...)...)
+func numstat(root, from string, ignore ignoring) map[string][2]int {
+	return numstatArgs(root, append([]string{"diff", from, "--numstat"}, ignore.args()...)...)
 }
 
 // numstatArgs is numstat over any git invocation that prints --numstat lines,
@@ -615,7 +645,7 @@ func statusWord(code string) string {
 // that is partly committed and partly not shows as one diff. An untracked file
 // is in no commit and no index, so it is compared to /dev/null — which makes
 // git print it as all additions, exactly how a new file should read.
-func fileDiff(root, path string, untracked bool, spec scopeSpec, ignore bool) (string, bool, error) {
+func fileDiff(root, path string, untracked bool, spec scopeSpec, ignore ignoring) (string, bool, error) {
 	var args []string
 	switch {
 	case untracked:
@@ -631,7 +661,7 @@ func fileDiff(root, path string, untracked bool, spec scopeSpec, ignore bool) (s
 		args = []string{"diff", spec.from, "--", path}
 	}
 	if !untracked {
-		args = append(args[:len(args)-2], append(ignoreArgs(ignore), args[len(args)-2:]...)...)
+		args = append(args[:len(args)-2], append(ignore.args(), args[len(args)-2:]...)...)
 	}
 	cmd := exec.Command(gitExe, args...)
 	cmd.Dir = root

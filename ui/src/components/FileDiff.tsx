@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api } from '../api'
+import { api, type Ignoring } from '../api'
 import type { DiffFile } from '../types'
 import { Preview } from './Preview'
 import { highlightLines, languageOf } from '../lib/highlight'
+import { escapeHtml, markHtml, pairMarks } from '../lib/inline'
 
 // One file's diff: its own text, its own expanded context, its own preview.
 // Extracted from the viewer so a selection of many files is simply many of
@@ -80,14 +81,14 @@ export function FileDiff({
   repo,
   scope,
   file,
-  ignoreComments,
+  ignoring,
   poll,
 }: {
   name: string
   repo: string
   scope: string
   file: DiffFile
-  ignoreComments: boolean
+  ignoring: Ignoring
   poll: number // changes on every background tick
 }) {
   const [text, setText] = useState('')
@@ -99,11 +100,13 @@ export function FileDiff({
   const [expanded, setExpanded] = useState<Record<number, { from: number; lines: string[] }>>({})
 
   const load = useCallback(async () => {
-    const r = await api.diffText(name, repo, scope, file.path, file.untracked, ignoreComments)
+    const r = await api.diffText(name, repo, scope, file.path, file.untracked, ignoring)
     setText((prev) => (prev === r.diff ? prev : r.diff)) // identical text: no re-render
     setTotal(r.total)
     setTruncated(!!r.truncated)
-  }, [name, repo, scope, file.path, file.untracked, ignoreComments])
+    // the two flags, not the object: a new object every render is not a new ask
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name, repo, scope, file.path, file.untracked, ignoring.comments, ignoring.whitespace])
 
   useEffect(() => {
     let cancelled = false
@@ -128,6 +131,8 @@ export function FileDiff({
   }, [poll, load])
 
   const lines = useMemo(() => parseDiff(text), [text])
+  // where each replaced line actually changed (lib/inline.ts)
+  const marks = useMemo(() => pairMarks(lines), [lines])
 
   // Syntax colours come from each side of the file highlighted whole
   // (lib/highlight.ts): a removed line reads the before side by its old
@@ -200,12 +205,22 @@ export function FileDiff({
         {lines.map((l, i) => {
           if (l.kind !== 'hunk') {
             const html = l.kind === 'meta' ? undefined : coloured(l)
+            // the changed part, over the colours when they line up with the
+            // diff's text and over the plain text when they do not
+            const mark = marks.get(i)
+            const marked =
+              mark && mark.to > mark.from
+                ? (html !== undefined && markHtml(html, mark, l.text.length)) ||
+                  markHtml(escapeHtml(l.text), mark, l.text.length)
+                : null
             return (
               <div key={i} className={`dl dl-${l.kind}`}>
                 <span className="dl-no">{l.old ?? ''}</span>
                 <span className="dl-no">{l.new ?? ''}</span>
                 <span className="dl-sign">{l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : ' '}</span>
-                {html !== undefined ? (
+                {marked ? (
+                  <span className="dl-text" dangerouslySetInnerHTML={{ __html: marked }} />
+                ) : html !== undefined ? (
                   <span className="dl-text" dangerouslySetInnerHTML={{ __html: html || ' ' }} />
                 ) : (
                   <span className="dl-text">{l.text || ' '}</span>

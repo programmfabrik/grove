@@ -161,7 +161,7 @@ func repoScopes(root, repoName, dashboardBase, primary string) ScopeRepo {
 		forkPoint := mergeBaseOf(root, base)
 		out.Base = base
 		s := Scope{ID: "base", Kind: "range", Label: "vs " + base, Hint: "committed + uncommitted"}
-		fill(&s, numstat(root, forkPoint, false))
+		fill(&s, numstat(root, forkPoint, ignoring{}))
 		s.Files += untracked
 		// A squash merge leaves this scope listing every file the branch ever
 		// touched while the base already holds all of them, so say so on the
@@ -176,7 +176,7 @@ func repoScopes(root, repoName, dashboardBase, primary string) ScopeRepo {
 	// vs the upstream — what is not pushed yet, plus what is not committed yet
 	if from := upstreamForkPoint(root); from != "" {
 		s := Scope{ID: "origin", Kind: "range", Label: "vs " + out.Upstream, Hint: "unpushed + uncommitted"}
-		fill(&s, numstat(root, from, false))
+		fill(&s, numstat(root, from, ignoring{}))
 		s.Files += untracked
 		out.Scopes = append(out.Scopes, s)
 	}
