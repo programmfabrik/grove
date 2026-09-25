@@ -153,6 +153,15 @@ export type CheckRun = {
   completed_at?: string
   url?: string
 }
+// Why the checks could not be read. Only ever sent while the checks are on for
+// a repository that is on GitHub: switched off, or a remote that is not GitHub,
+// is a choice and says nothing.
+export type ChecksProblem = {
+  kind: 'credential' | 'limited' | 'unreachable' | 'github'
+  message: string
+  hint?: string
+}
+
 export type Checks = {
   state: 'success' | 'pending' | 'failure' | 'none'
   total: number

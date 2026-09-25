@@ -1,4 +1,4 @@
-import type { Checks, DiffFile, Diagnostics, JobState, Prefs, Program, RemoteResult, RemoteState, Repo, ScopeRepo, State, Update } from './types'
+import type { Checks, ChecksProblem, DiffFile, Diagnostics, JobState, Prefs, Program, RemoteResult, RemoteState, Repo, ScopeRepo, State, Update } from './types'
 
 async function j<T>(r: Response): Promise<T> {
   if (!r.ok) {
@@ -83,9 +83,9 @@ export const api = {
         `&file=${encodeURIComponent(file)}&from=${from}&to=${to}`,
     ).then((r) => j<{ lines: string[]; from: number; total: number }>(r)),
   // whether GitHub is testing what each checkout pushed, keyed by checkout
-  checks: (repo: string): Promise<{ checks: Record<string, Checks>; error?: string; note?: string }> =>
+  checks: (repo: string): Promise<{ checks: Record<string, Checks>; problem?: ChecksProblem; note?: string }> =>
     fetch(`api/checks?repo=${encodeURIComponent(repo)}`).then((r) =>
-      j<{ checks: Record<string, Checks>; error?: string; note?: string }>(r),
+      j<{ checks: Record<string, Checks>; problem?: ChecksProblem; note?: string }>(r),
     ),
   diagnostics: (): Promise<Diagnostics> => fetch('api/diagnostics').then((r) => j<Diagnostics>(r)),
   prefs: (): Promise<Prefs> => fetch('api/settings').then((r) => j<Prefs>(r)),

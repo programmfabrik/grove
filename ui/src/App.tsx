@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
-import type { Checkout, Checks, Prefs, Repo, State, Update } from './types'
+import type { Checkout, Checks, ChecksProblem, Prefs, Repo, State, Update } from './types'
 import { RepoList } from './components/RepoList'
 import { WorktreeList } from './components/WorktreeList'
 import { Sidebar } from './components/Sidebar'
@@ -34,6 +34,10 @@ export default function App() {
   // what GitHub says about each checkout's pushed commit, asked for the
   // selected repository only and left alone otherwise
   const [checks, setChecks] = useState<Record<string, Checks>>({})
+  // Why they could not be read, when that is so. Grove used to drop this on the
+  // floor: a timeout blanked every CI line and nothing said why, and the next
+  // thing anybody did was go looking for an expired token that was fine.
+  const [checksProblem, setChecksProblem] = useState<ChecksProblem | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [showChecks, setShowChecks] = useState<string | null>(null)
   // which of the offers are switched on. The settings live in another window,
@@ -188,8 +192,10 @@ export default function App() {
             wasChecking.current[name] = c.state
           }
           setChecks(now)
+          setChecksProblem(r.problem ?? null)
         })
         .catch(() => {})
+    setChecksProblem(null) // another repository's problem is not this one's
     ask()
     // a run that is still going is worth asking about again; one that has
     // finished is not going to change
@@ -265,6 +271,25 @@ export default function App() {
       )}
 
       {(error || state?.git_error) && <div className="error error-bar">{error || state?.git_error}</div>}
+
+      {/* Prominent, because the alternative was silence: a credential is
+          somebody's to fix and says so in red; a limit or a network that did
+          not answer passes on its own and says so in amber, while the last
+          runs grove knew stay on screen. */}
+      {checksProblem && (
+        <div className={`error error-bar ck-problem ck-problem-${checksProblem.kind}`}>
+          <b>GitHub checks:</b> {checksProblem.message}
+          {checksProblem.hint && <span className="ck-problem-hint"> {checksProblem.hint}</span>}
+          {checksProblem.kind === 'credential' &&
+            (update?.desktop ? (
+              <span className="ck-problem-hint"> Settings: ⌘,</span>
+            ) : (
+              <button className="btn-ghost ck-problem-go" onClick={() => setShowSettings(true)}>
+                Settings
+              </button>
+            ))}
+        </div>
+      )}
 
       <div className="panes">
         {reposFold ? (

@@ -3,10 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The two spellings a GitHub remote comes in, and everything that is not one.
@@ -162,5 +166,138 @@ func TestChecksWithoutActionsAccessCountEverything(t *testing.T) {
 	}
 	if c.Total != 6 {
 		t.Errorf("counted %d runs, want all 6 when the events cannot be read", c.Total)
+	}
+}
+
+// Which kind of problem it is decides how loudly the dashboard says it, so the
+// kinds have to come out right — a rate limit in particular arrives as a 403,
+// and reporting it as a refused credential sends somebody off to renew a token
+// that is fine.
+func TestGitHubFailuresAreNamed(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		status int
+		header string
+		body   string
+		want   error
+	}{
+		{"expired token", 401, "", `{"message":"Bad credentials"}`, errRefused},
+		{"no access", 403, "", `{"message":"Resource not accessible"}`, errRefused},
+		{"hourly limit", 403, "0", `{"message":"API rate limit exceeded"}`, errRateLimited},
+		{"secondary limit", 403, "", `{"message":"You have exceeded a secondary rate limit"}`, errRateLimited},
+		{"too many", 429, "", ``, errRateLimited},
+		{"gone", 404, "", ``, errNotOnGitHub},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if c.header != "" {
+					w.Header().Set("X-RateLimit-Remaining", c.header)
+				}
+				w.WriteHeader(c.status)
+				w.Write([]byte(c.body))
+			}))
+			defer srv.Close()
+			var into any
+			if err := ghGet(context.Background(), "t", srv.URL, &into); !errors.Is(err, c.want) {
+				t.Errorf("%d %s: got %v, want %v", c.status, c.body, err, c.want)
+			}
+		})
+	}
+	kinds := map[error]string{
+		errNoToken: "credential", errRefused: "credential", errRateLimited: "limited",
+		context.DeadlineExceeded: "unreachable",
+	}
+	for err, want := range kinds {
+		if got := problemOf(err).Kind; got != want {
+			t.Errorf("problemOf(%v).Kind = %q, want %q", err, got, want)
+		}
+	}
+}
+
+// A failed refresh is not an answer. It keeps the last one on screen with the
+// problem beside it, is tried again at the running pace rather than cached for
+// the settled five minutes, and a refused credential is dropped so a renewed
+// one is used at the very next ask.
+func TestAFailedRefreshKeepsTheLastAnswerAndSaysWhy(t *testing.T) {
+	status := http.StatusOK
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if status != http.StatusOK {
+			w.WriteHeader(status)
+			return
+		}
+		switch {
+		case strings.Contains(r.URL.Path, "/actions/runs"):
+			w.Write([]byte(`{"workflow_runs":[]}`))
+		default:
+			w.Write([]byte(`{"total_count":1,"check_runs":[{"name":"ci","status":"completed","conclusion":"success",` +
+				`"started_at":"2026-09-25T08:00:00Z","completed_at":"2026-09-25T08:10:00Z","check_suite":{"id":1}}]}`))
+		}
+	}))
+	defer srv.Close()
+	was := githubAPI
+	githubAPI = srv.URL
+	defer func() { githubAPI = was }()
+
+	c := newChecker()
+	c.tok, c.tokAt = tokenSource{Token: "t", From: "test"}, time.Now()
+
+	first, p := c.get(context.Background(), "o", "r", "sha")
+	if p != nil || first.State != "success" {
+		t.Fatalf("first answer: %+v, %+v", first, p)
+	}
+
+	// the settled answer goes stale, and the refresh is refused
+	status = http.StatusUnauthorized
+	c.byRef["o/r@sha"] = cached{checks: first, at: time.Now().Add(-checksSettled - time.Second)}
+	got, p := c.get(context.Background(), "o", "r", "sha")
+	if p == nil || p.Kind != "credential" {
+		t.Fatalf("problem = %+v, want a credential problem", p)
+	}
+	if got.State != "success" {
+		t.Errorf("the last answer went missing on a failed refresh: %+v", got)
+	}
+	if c.tok.Token != "" {
+		t.Error("the refused token is still being used")
+	}
+	if e := c.byRef["o/r@sha"]; e.err == nil {
+		t.Error("the failure was not remembered")
+	} else if checksRunning >= checksSettled {
+		t.Error("a failure must be retried sooner than a settled answer")
+	}
+}
+
+// Checks switched on and a GitHub remote is a configuration, and a missing
+// credential is an error in it — said even when nothing has been pushed yet,
+// which is exactly when nothing else would ever have asked for one.
+func TestAMissingCredentialIsAProblemWhenChecksAreOn(t *testing.T) {
+	requireGit(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // default settings: checks on
+	repo := initRepo(t, filepath.Join(t.TempDir(), "r"))
+	gitRun(t, repo, "remote", "add", "origin", "git@github.com:o/r.git")
+
+	d := &grove{state: map[string]*repoState{}, checks: newChecker()}
+	d.checks.tokAt = time.Now() // "looked a moment ago and found nothing"
+
+	w := httptest.NewRecorder()
+	d.handleChecks(w, httptest.NewRequest("GET", "/api/checks?repo="+url.QueryEscape(repo), nil))
+	var res struct {
+		Problem *checksProblem `json:"problem"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&res); err != nil {
+		t.Fatal(err)
+	}
+	if res.Problem == nil || res.Problem.Kind != "credential" {
+		t.Fatalf("problem = %+v, want a credential problem", res.Problem)
+	}
+
+	// not a GitHub remote: there was never anything to ask, and nothing to say
+	gitRun(t, repo, "remote", "set-url", "origin", "git@gitlab.example.com:o/r.git")
+	w = httptest.NewRecorder()
+	d.handleChecks(w, httptest.NewRequest("GET", "/api/checks?repo="+url.QueryEscape(repo), nil))
+	res.Problem = nil
+	json.NewDecoder(w.Body).Decode(&res)
+	if res.Problem != nil {
+		t.Errorf("a remote that is not GitHub is a choice, not a problem: %+v", res.Problem)
 	}
 }

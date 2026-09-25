@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -103,6 +105,45 @@ func findToken() tokenSource {
 	return tokenSource{Err: "no GitHub credential found"}
 }
 
+// checksProblem is why the checks could not be read, in the words the
+// dashboard shows. Kind says how loud: a credential is somebody's to fix, the
+// others pass on their own.
+type checksProblem struct {
+	Kind    string `json:"kind"` // credential | limited | unreachable | github
+	Message string `json:"message"`
+	Hint    string `json:"hint,omitempty"`
+}
+
+func problemOf(err error) *checksProblem {
+	var ne net.Error
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, errNoToken):
+		return &checksProblem{Kind: "credential",
+			Message: "GitHub checks are on, but there is no GitHub credential on this machine.",
+			Hint:    "Run gh auth login — or switch the checks off in Settings."}
+	case errors.Is(err, errRefused):
+		return &checksProblem{Kind: "credential",
+			Message: "GitHub refused the credential — it has expired or been revoked.",
+			Hint:    "Run gh auth login or gh auth refresh; grove picks the new one up by itself."}
+	case errors.Is(err, errRateLimited):
+		return &checksProblem{Kind: "limited",
+			Message: "GitHub's API rate limit is used up.",
+			Hint:    "The runs come back when it resets."}
+	case errors.Is(err, context.DeadlineExceeded), errors.As(err, &ne):
+		return &checksProblem{Kind: "unreachable",
+			Message: "GitHub did not answer.",
+			Hint:    "Grove asks again shortly; any runs it already knew stay on screen until then."}
+	default:
+		return &checksProblem{Kind: "github", Message: err.Error()}
+	}
+}
+
+// loudness orders problems so the one worth seeing is the one shown: a
+// credential over a limit over a network hiccup.
+var loudness = map[string]int{"credential": 3, "limited": 2, "github": 1, "unreachable": 0}
+
 // checker holds what GitHub has said, keyed by commit. A concluded run does
 // not change, and one still going is worth asking about again shortly.
 type checker struct {
@@ -115,7 +156,7 @@ type checker struct {
 type cached struct {
 	checks Checks
 	at     time.Time
-	err    string
+	err    error
 }
 
 func newChecker() *checker { return &checker{byRef: map[string]cached{}} }
@@ -142,34 +183,50 @@ func (c *checker) token() tokenSource {
 
 // get answers from what it knows, and asks GitHub only when that has gone
 // stale. It never blocks on the network for longer than the caller's context.
-func (c *checker) get(ctx context.Context, owner, repo, sha string) (Checks, string) {
+func (c *checker) get(ctx context.Context, owner, repo, sha string) (Checks, *checksProblem) {
 	key := owner + "/" + repo + "@" + sha
 	c.mu.Lock()
-	if e, ok := c.byRef[key]; ok {
+	prev, had := c.byRef[key]
+	if had {
 		fresh := checksSettled
-		if e.checks.State == "pending" {
+		// A failure is kept only as long as a run in progress is: it is not
+		// an answer, and caching one for the settled five minutes is how a
+		// laptop waking with its network not yet up blanked every CI line
+		// for five minutes without a word.
+		if prev.checks.State == "pending" || prev.err != nil {
 			fresh = checksRunning
 		}
-		if time.Since(e.at) < fresh {
+		if time.Since(prev.at) < fresh {
 			c.mu.Unlock()
-			return e.checks, e.err
+			return prev.checks, problemOf(prev.err)
 		}
 	}
 	c.mu.Unlock()
 
 	tok := c.token()
+	var checks Checks
+	var err error
 	if tok.Token == "" {
-		return Checks{}, tok.Err
-	}
-	checks, err := fetchChecks(ctx, tok.Token, owner, repo, sha)
-	msg := ""
-	if err != nil {
-		msg = err.Error()
+		err = errNoToken
+	} else {
+		checks, err = fetchChecks(ctx, tok.Token, owner, repo, sha)
 	}
 	c.mu.Lock()
-	c.byRef[key] = cached{checks: checks, at: time.Now(), err: msg}
-	c.mu.Unlock()
-	return checks, msg
+	defer c.mu.Unlock()
+	if err != nil {
+		// the last answer stays on screen through a failed refresh, with the
+		// problem beside it, rather than the dot vanishing with no reason given
+		if had && prev.checks.State != "" {
+			checks = prev.checks
+		}
+		// a refused token is dropped at once, so one renewed with gh auth
+		// refresh is used from the next ask rather than half an hour later
+		if errors.Is(err, errRefused) {
+			c.tok, c.tokAt = tokenSource{}, time.Time{}
+		}
+	}
+	c.byRef[key] = cached{checks: checks, at: time.Now(), err: err}
+	return checks, problemOf(err)
 }
 
 // githubAPI is where the checks are asked for; a test points it at a fake.
@@ -197,6 +254,16 @@ var commitEvents = map[string]bool{
 // see the repository. Neither is worth an error on the dashboard.
 var errNotOnGitHub = errors.New("not on GitHub")
 
+// The failures grove can name, so the dashboard can say which one it is: a
+// credential needs somebody to act, a limit and a network do not, and telling
+// them apart is the difference between fixing a token and chasing one that is
+// fine. A rate limit arrives as a 403 too, which is why it is looked for first.
+var (
+	errNoToken     = errors.New("no GitHub credential found")
+	errRefused     = errors.New("GitHub refused the credential")
+	errRateLimited = errors.New("GitHub's rate limit is used up")
+)
+
 func ghGet(ctx context.Context, token, url string, into any) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -216,8 +283,16 @@ func ghGet(ctx context.Context, token, url string, into any) error {
 		return json.NewDecoder(res.Body).Decode(into)
 	case http.StatusNotFound:
 		return errNotOnGitHub
+	case http.StatusTooManyRequests:
+		return errRateLimited
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return fmt.Errorf("GitHub refused the credential (%s)", res.Status)
+		// both limits — the hourly one and the secondary one — come as a 403
+		// that is nothing to do with the credential
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 4<<10))
+		if res.Header.Get("X-RateLimit-Remaining") == "0" || strings.Contains(strings.ToLower(string(body)), "rate limit") {
+			return errRateLimited
+		}
+		return fmt.Errorf("%w (%s)", errRefused, res.Status)
 	default:
 		return fmt.Errorf("GitHub: %s", res.Status)
 	}
@@ -454,10 +529,19 @@ func (d *grove) handleChecks(w http.ResponseWriter, r *http.Request) {
 	d.mu.RUnlock()
 
 	type answer struct {
-		name   string
-		checks Checks
-		err    string
+		name    string
+		checks  Checks
+		problem *checksProblem
 	}
+	// Checks on and a GitHub remote is a configuration, and a missing credential
+	// is an error in it — whether or not anything has been pushed yet to ask
+	// about. Without this, a machine with no credential and nothing pushed is
+	// told nothing at all.
+	if d.checks.token().Token == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"checks": map[string]Checks{}, "problem": problemOf(errNoToken)})
+		return
+	}
+
 	tips := pushedTips(repo)
 	ch := make(chan answer, len(checkouts))
 	asked := 0
@@ -468,24 +552,24 @@ func (d *grove) handleChecks(w http.ResponseWriter, r *http.Request) {
 		}
 		asked++
 		go func(checkout, sha string) {
-			checks, msg := d.checks.get(r.Context(), owner, name, sha)
-			ch <- answer{checkout, checks, msg}
+			checks, problem := d.checks.get(r.Context(), owner, name, sha)
+			ch <- answer{checkout, checks, problem}
 		}(c.Name, sha)
 	}
 	out := map[string]Checks{}
-	var firstErr string
+	var worst *checksProblem
 	for i := 0; i < asked; i++ {
 		a := <-ch
-		if a.err != "" && firstErr == "" {
-			firstErr = a.err
+		if a.problem != nil && (worst == nil || loudness[a.problem.Kind] > loudness[worst.Kind]) {
+			worst = a.problem
 		}
 		if a.checks.State != "" {
 			out[a.name] = a.checks
 		}
 	}
 	res := map[string]any{"checks": out}
-	if firstErr != "" {
-		res["error"] = firstErr
+	if worst != nil {
+		res["problem"] = worst
 	}
 	writeJSON(w, http.StatusOK, res)
 }
