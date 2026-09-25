@@ -326,6 +326,33 @@ export function DiffTab({
   const scopeRepo = repos?.find((r) => r.name === sel?.repo)
   const scope = scopeRepo?.scopes.find((s) => s.id === sel?.scope)
 
+  // An amended or rebased commit is a NEW commit, with a new sha, and the old
+  // one lives on as an orphan that git will still show. So the selection went
+  // on showing the commit as it was — accurately, and uselessly — while the list
+  // beside it showed its successor: an agent amended a commit that was open
+  // here, twice, and the comment it added appeared only once somebody clicked
+  // the row again.
+  //
+  // When the selected commit leaves the list, it is followed to the commit that
+  // arrived in the same refresh carrying its subject line: an amend keeps its
+  // subject, and a rebase keeps every subject it replays. "Arrived in the same
+  // refresh" is what keeps an older commit that merely shares the subject — a
+  // second "wip" — from being taken for it. None, or more than one, is a guess,
+  // and no guess is made: the old commit stays, and it is still what it was.
+  const following = useRef<{ scope: string; label: string; known: Set<string> } | null>(null)
+  useEffect(() => {
+    if (!sel || !scopeRepo || !sel.scope.startsWith('commit:')) return
+    const commits = scopeRepo.scopes.filter((s) => s.kind === 'commit')
+    if (scope) {
+      following.current = { scope: sel.scope, label: scope.label, known: new Set(commits.map((s) => s.id)) }
+      return
+    }
+    const was = following.current
+    if (!was || was.scope !== sel.scope) return // never seen it in the list: nothing to follow from
+    const heirs = commits.filter((s) => s.label === was.label && !was.known.has(s.id))
+    if (heirs.length === 1) setSel({ ...sel, scope: heirs[0].id })
+  }, [sel, scopeRepo, scope])
+
   // A multi-selection opens its sections only while it is small. Keyed on the
   // selection's content, never its array identity: a refresh that re-picks the
   // same files must not fold the sections the user just opened.
