@@ -111,7 +111,7 @@ func (d *grove) handleLines(w http.ResponseWriter, r *http.Request) {
 func fileAt(root, path string, spec scopeSpec, before bool) (string, error) {
 	rev, fromWorktree := blobRev(spec, before)
 	if fromWorktree {
-		buf, err := os.ReadFile(filepath.Join(root, filepath.Clean(path)))
+		buf, err := worktreeContent(filepath.Join(root, filepath.Clean(path)))
 		if err == nil {
 			return string(buf), nil
 		}
@@ -123,4 +123,39 @@ func fileAt(root, path string, spec scopeSpec, before bool) (string, error) {
 		return "", fmt.Errorf("no such file at %s", rev)
 	}
 	return string(blob), nil
+}
+
+// worktreeContent is what git takes a working-tree file to contain: its bytes,
+// or — for a symlink — the path it points to, which is what git stores and what
+// every diff of it shows. os.ReadFile follows the link and hands back whatever
+// is at the other end instead: another file's text, which then coloured and
+// expanded a diff whose lines are the link's, or, for a link to a directory,
+// nothing at all.
+func worktreeContent(full string) ([]byte, error) {
+	if target, ok := symlinkTarget(full); ok {
+		return []byte(target), nil
+	}
+	return os.ReadFile(full)
+}
+
+func symlinkTarget(full string) (string, bool) {
+	fi, err := os.Lstat(full)
+	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		return "", false
+	}
+	target, err := os.Readlink(full)
+	return target, err == nil
+}
+
+// newLinkDiff is the diff git shows for a symlink once it is added: a new file
+// of mode 120000 whose one line, without a newline, is where it points.
+func newLinkDiff(path, target string) string {
+	p := filepath.ToSlash(path)
+	return "diff --git a/" + p + " b/" + p + "\n" +
+		"new file mode 120000\n" +
+		"--- /dev/null\n" +
+		"+++ b/" + p + "\n" +
+		"@@ -0,0 +1 @@\n" +
+		"+" + target + "\n" +
+		"\\ No newline at end of file\n"
 }

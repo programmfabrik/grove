@@ -649,6 +649,14 @@ func fileDiff(root, path string, untracked bool, spec scopeSpec, ignore ignoring
 	var args []string
 	switch {
 	case untracked:
+		// A new symlink is spelled out rather than handed to --no-index, which
+		// follows one that points at a DIRECTORY, takes the directory for the
+		// place to diff /dev/null into, and fails looking for <link>/null — a
+		// new link to a directory could not be opened at all. What is shown is
+		// what git records once it is added: the path it points to.
+		if target, ok := symlinkTarget(filepath.Join(root, filepath.Clean(path))); ok {
+			return newLinkDiff(path, target), false, nil
+		}
 		// in no commit and no index, so there is nothing to diff against
 		args = []string{"diff", "--no-index", "--", "/dev/null", path}
 	case spec.kind == "staged":
