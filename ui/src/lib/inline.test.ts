@@ -26,7 +26,9 @@ test('invisible characters are drawn, the rare ones named', () => {
   const [cr] = changedPart('x = 1\r', 'x = 1')!
   assert.ok(markHtml(escapeHtml('x = 1\r'), cr, 6)!.includes('␍'))
   const [tab, spaces] = changedPart('\tgo()', '    go()')!
-  assert.ok(markHtml('\tgo()', tab, 5)!.includes('→'))
+  // the tab itself is kept, so it keeps its width to the next tab stop; the
+  // arrow is drawn over it by CSS rather than standing in for it
+  assert.ok(markHtml('\tgo()', tab, 5)!.includes('<span class="ws ws-tab" title="tab">\t</span>'))
   assert.equal(markHtml('    go()', spaces, 8)!.split('·').length - 1, 4)
   const [nbsp] = changedPart('a b', 'a b')!
   assert.ok(markHtml('a b', nbsp, 3)!.includes('title="U+00A0 no-break space"'))

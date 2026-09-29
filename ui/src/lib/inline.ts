@@ -90,7 +90,6 @@ const isLow = (c: number) => c >= 0xdc00 && c <= 0xdfff
 // something anybody guesses.
 const named: Record<string, [string, string?]> = {
   ' ': ['·'],
-  '\t': ['→', 'tab'],
   '\r': ['␍', 'carriage return — a Windows line ending'],
   '\u00a0': ['⍽', 'U+00A0 no-break space'],
   '\u200b': ['◦', 'U+200B zero-width space'],
@@ -100,6 +99,11 @@ const named: Record<string, [string, string?]> = {
 const otherInvisible = /[\u2000-\u200f\u2028-\u202f\u205f-\u2064\u3000]/
 
 function glyph(ch: string): string | null {
+  // A tab stays a tab. Its width is "to the next tab stop", which no single
+  // character has, and a one-column → standing in for it pulled the rest of the
+  // line left — an indented line drawn as if it were barely indented at all.
+  // The real tab keeps its width and the arrow is laid over its start (.ws-tab).
+  if (ch === '\t') return '<span class="ws ws-tab" title="tab">\t</span>'
   const g = named[ch]
   if (g) return g[1] ? `<span class="ws" title="${g[1]}">${g[0]}</span>` : `<span class="ws">${g[0]}</span>`
   if (otherInvisible.test(ch)) {

@@ -403,6 +403,10 @@ a { color: var(--accent-ink); }
 .dl-del .dl-chg { background: color-mix(in srgb, var(--diff-del-ink) 24%, transparent); }
 .dl-add .dl-chg { background: color-mix(in srgb, var(--diff-add-ink) 24%, transparent); }
 .ws { opacity: .8; }
+/* a changed tab keeps its own width, to the next tab stop, with the arrow drawn
+   over the start of it rather than one column standing in for four */
+.ws-tab { position: relative; }
+.ws-tab::before { content: '→'; position: absolute; left: 0; }
 .dl-del .ws { color: var(--diff-del-ink); }
 .dl-add .ws { color: var(--diff-add-ink); }
 .dl-add .dl-sign { color: var(--diff-add-ink); }
