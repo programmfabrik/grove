@@ -26,7 +26,7 @@ func TestANewSymlinkShowsWhereItPoints(t *testing.T) {
 
 	for link, target := range map[string]string{"_models": "models", "to-file": "target.txt", "dangling": "nowhere"} {
 		t.Run(link, func(t *testing.T) {
-			text, _, err := fileDiff(repo, link, true, scopeSpec{kind: "unstaged"}, ignoring{})
+			text, _, err := fileDiff(repo, link, true, scopeSpec{kind: "unstaged"}, ignoring{}, "")
 			if err != nil {
 				t.Fatalf("diff: %v", err)
 			}
@@ -51,7 +51,7 @@ func TestANewSymlinkShowsWhereItPoints(t *testing.T) {
 		t.Fatal(err)
 	}
 	gitRun(t, repo, "reset", "-q", "--", "_models")
-	got, _, _ := fileDiff(repo, "_models", true, scopeSpec{kind: "unstaged"}, ignoring{})
+	got, _, _ := fileDiff(repo, "_models", true, scopeSpec{kind: "unstaged"}, ignoring{}, "")
 	strip := func(s string) string { // the index line names blobs, and ours has none
 		var out []string
 		for _, l := range strings.Split(strings.TrimSpace(s), "\n") {

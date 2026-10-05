@@ -103,6 +103,11 @@ type DiffFile struct {
 	// overwriting it, so this is not a warning about loss — it is a warning
 	// that the discard will not happen.
 	SubmoduleDirty bool `json:"submodule_dirty,omitempty"`
+	// OldPath is where a renamed or copied file came from. Without it a rename
+	// is indistinguishable from a new file — in the list, in its counts, and in
+	// its diff, which git can only pair with the old file when it is asked
+	// about both.
+	OldPath string `json:"old_path,omitempty"`
 	// SubmoduleBranch is the branch checked out INSIDE it, when there is one.
 	// Putting a submodule back to a recorded commit detaches it, and a
 	// submodule that is somebody's working branch — a linked worktree, which
@@ -260,7 +265,12 @@ func (d *grove) handleDiff(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, fmt.Errorf("path must stay inside the checkout"))
 			return
 		}
-		text, truncated, err := fileDiff(root, file, q.Get("untracked") == "1", spec, ignore)
+		old := q.Get("old")
+		if old != "" && !safeRepoPath(old) {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("path must stay inside the checkout"))
+			return
+		}
+		text, truncated, err := fileDiff(root, file, q.Get("untracked") == "1", spec, ignore, old)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, err)
 			return
@@ -391,6 +401,9 @@ func nameStatus(root, origin string, ignore ignoring, args ...string) ([]DiffFil
 			Path: path, Status: statusWord(f[0][:1]),
 			Origin: origin, Preview: previewKind(path),
 		}
+		if len(f) == 3 && (f[0][0] == 'R' || f[0][0] == 'C') {
+			file.OldPath = f[1]
+		}
 		if s, ok := stats[path]; ok {
 			file.Added, file.Deleted = s[0], s[1]
 		} else if _, had := plain[path]; had && ignore.any() {
@@ -487,21 +500,23 @@ func changedFiles(root, forkPoint string, ignore ignoring) ([]DiffFile, error) {
 	// one numstat over the whole span covers every case: a committed-only file
 	// gets its branch counts, an uncommitted-only file its working counts, and
 	// a file that is both gets the sum a reviewer actually cares about
-	stats := numstat(root, forkPoint, ignore)
+	stats, from := numstatFull(root, append([]string{"diff", forkPoint, "--numstat"}, ignore.args()...)...)
 	// What is in the stats without the flags, to tell "nothing survives what
 	// is being ignored" from "nothing was there to begin with": a file added
 	// on the branch and deleted again is in no numstat at all, flag or none,
 	// and used to disappear the moment ANY ignore was switched on — for a
-	// reason that had nothing to do with comments or with whitespace.
+	// reason that had nothing to do with comments or with whitespace. A rename
+	// is a fact about the files rather than about what is ignored, so it is
+	// read from here too.
 	plain := stats
 	if ignore.any() {
-		plain = numstat(root, forkPoint, ignoring{})
+		plain, from = numstatFull(root, "diff", forkPoint, "--numstat")
 	}
 	files := make([]DiffFile, 0, len(order))
 	for _, path := range order {
 		code, dirty := working[path]
 		status, onBranch := committed[path]
-		f := DiffFile{Path: path, Untracked: code == "??", Preview: previewKind(path)}
+		f := DiffFile{Path: path, Untracked: code == "??", Preview: previewKind(path), OldPath: from[path]}
 		switch {
 		case onBranch && dirty:
 			f.Origin, f.Status = "both", statusWord(code)
@@ -603,10 +618,18 @@ func numstat(root, from string, ignore ignoring) map[string][2]int {
 // numstatArgs is numstat over any git invocation that prints --numstat lines,
 // so staged/unstaged/commit scopes share the parsing.
 func numstatArgs(root string, args ...string) map[string][2]int {
+	stats, _ := numstatFull(root, args...)
+	return stats
+}
+
+// numstatFull is numstat keyed by the path each change ENDS at, with where the
+// renamed and copied ones came from beside it.
+func numstatFull(root string, args ...string) (map[string][2]int, map[string]string) {
 	stats := map[string][2]int{}
+	from := map[string]string{}
 	out, err := git(root, args...)
 	if err != nil {
-		return stats
+		return stats, from
 	}
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Split(line, "\t")
@@ -615,13 +638,45 @@ func numstatArgs(root string, args ...string) map[string][2]int {
 		}
 		a, _ := strconv.Atoi(f[0]) // "-" for binary files -> 0
 		d, _ := strconv.Atoi(f[1])
-		path := f[2]
-		if i := strings.Index(path, " => "); i >= 0 { // rename
-			path = strings.TrimSuffix(path[i+4:], "}")
-		}
+		old, path := renamePaths(f[2])
 		stats[path] = [2]int{a, d}
+		if old != path {
+			from[path] = old
+		}
 	}
-	return stats
+	return stats, from
+}
+
+// renamePaths reads the path column of a --numstat line. A rename is written
+// with what its two names share pulled outside braces —
+// internal/openapi/{gitbook.go => render.go}, src/{old => new}/main.go — or, if
+// they share nothing, as old => new. Either side of the braces may be empty:
+// {=> sub}/x.go is x.go moved into sub/, which leaves a slash to close up.
+//
+// The parse this replaces kept what followed " => " and cut a trailing brace,
+// so internal/openapi/{gitbook.go => render.go} was counted under "render.go"
+// and the renamed file showed no counts at all — 280 lines missing from the
+// commit it was in.
+func renamePaths(p string) (old, path string) {
+	arrow := strings.Index(p, " => ")
+	if arrow < 0 {
+		return p, p
+	}
+	open := strings.LastIndex(p[:arrow], "{")
+	if open < 0 {
+		return p[:arrow], p[arrow+4:]
+	}
+	shut := strings.Index(p[arrow:], "}")
+	if shut < 0 {
+		return p, p
+	}
+	shut += arrow
+	join := func(a, mid, b string) string {
+		out := strings.ReplaceAll(a+mid+b, "//", "/")
+		return strings.TrimPrefix(out, "/")
+	}
+	pre, suf := p[:open], p[shut+1:]
+	return join(pre, p[open+1:arrow], suf), join(pre, p[arrow+4:shut], suf)
 }
 
 func statusWord(code string) string {
@@ -645,7 +700,7 @@ func statusWord(code string) string {
 // that is partly committed and partly not shows as one diff. An untracked file
 // is in no commit and no index, so it is compared to /dev/null — which makes
 // git print it as all additions, exactly how a new file should read.
-func fileDiff(root, path string, untracked bool, spec scopeSpec, ignore ignoring) (string, bool, error) {
+func fileDiff(root, path string, untracked bool, spec scopeSpec, ignore ignoring, oldPath string) (string, bool, error) {
 	var args []string
 	switch {
 	case untracked:
@@ -659,17 +714,27 @@ func fileDiff(root, path string, untracked bool, spec scopeSpec, ignore ignoring
 		}
 		// in no commit and no index, so there is nothing to diff against
 		args = []string{"diff", "--no-index", "--", "/dev/null", path}
-	case spec.kind == "staged":
-		args = []string{"diff", "--cached", "--", path}
-	case spec.kind == "unstaged":
-		args = []string{"diff", "--", path}
-	case spec.kind == "commit":
-		args = []string{"show", "--format=", spec.sha, "--", path}
 	default:
-		args = []string{"diff", spec.from, "--", path}
-	}
-	if !untracked {
-		args = append(args[:len(args)-2], append(ignore.args(), args[len(args)-2:]...)...)
+		switch {
+		case spec.kind == "staged":
+			args = []string{"diff", "--cached"}
+		case spec.kind == "unstaged":
+			args = []string{"diff"}
+		case spec.kind == "commit":
+			args = []string{"show", "--format=", spec.sha}
+		default:
+			args = []string{"diff", spec.from}
+		}
+		args = append(args, ignore.args()...)
+		// Both names, for a rename: git pairs a file with its old self only
+		// when the old self is in the pathspec too. Asked about the new name
+		// alone it shows a NEW file — every line of it added — which is how
+		// gitbook.go becoming render.go read as 308 lines written from scratch
+		// rather than 280 taken out.
+		args = append(args, "--", path)
+		if oldPath != "" && oldPath != path {
+			args = append(args, oldPath)
+		}
 	}
 	cmd := exec.Command(gitExe, args...)
 	cmd.Dir = root

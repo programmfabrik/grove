@@ -100,13 +100,13 @@ export function FileDiff({
   const [expanded, setExpanded] = useState<Record<number, { from: number; lines: string[] }>>({})
 
   const load = useCallback(async () => {
-    const r = await api.diffText(name, repo, scope, file.path, file.untracked, ignoring)
+    const r = await api.diffText(name, repo, scope, file.path, file.untracked, ignoring, file.old_path)
     setText((prev) => (prev === r.diff ? prev : r.diff)) // identical text: no re-render
     setTotal(r.total)
     setTruncated(!!r.truncated)
     // the two flags, not the object: a new object every render is not a new ask
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, repo, scope, file.path, file.untracked, ignoring.comments, ignoring.whitespace])
+  }, [name, repo, scope, file.path, file.old_path, file.untracked, ignoring.comments, ignoring.whitespace])
 
   useEffect(() => {
     let cancelled = false
@@ -147,7 +147,7 @@ export function FileDiff({
     let cancelled = false
     const side = async (s: 'before' | 'after') => {
       try {
-        const r = await api.fileText(name, repo, scope, file.path, s)
+        const r = await api.fileText(name, repo, scope, file.path, s, file.old_path)
         return await highlightLines(r.lines.join('\n'), language)
       } catch {
         return undefined // too large, or no file on that side

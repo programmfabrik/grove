@@ -299,6 +299,7 @@ export function TreeRows({
                 {depth === 0 ? <RepoIcon /> : dir ? <FolderIcon open={open} /> : <FileIcon />}
               </span>
               <Label text={n.label} terms={terms} />
+              {n.file?.old_path && <RenamedFrom file={n.file} />}
               {n.file && <Origin origin={n.file.origin} merged={n.file.merged} />}
               <Stat n={n} />
             </div>
@@ -318,5 +319,19 @@ export function TreeRows({
         )
       })}
     </>
+  )
+}
+
+// RenamedFrom says, beside a renamed file's name, what it used to be called —
+// just the old name when it stayed in the same directory, the old path when it
+// moved. Without it a rename sits in the tree looking exactly like a new file.
+function RenamedFrom({ file }: { file: DiffFile }) {
+  const old = file.old_path!
+  const dir = (p: string) => p.slice(0, p.lastIndexOf('/') + 1)
+  const shown = dir(old) === dir(file.path) ? old.slice(old.lastIndexOf('/') + 1) : old
+  return (
+    <span className="tw-from" title={`renamed from ${old}`}>
+      ← {shown}
+    </span>
   )
 }

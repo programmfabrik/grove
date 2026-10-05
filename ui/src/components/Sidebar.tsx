@@ -134,7 +134,11 @@ export function Sidebar({
                 name: c.name,
                 repo: pending.repo,
                 action: pending.action,
-                paths: pending.files.filter((f: DiffFile) => !f.untracked).map((f: DiffFile) => f.path),
+                // a rename is two paths in the index, the old one gone and
+                // the new one there; restoring only the new one leaves half
+                paths: pending.files
+                  .filter((f: DiffFile) => !f.untracked)
+                  .flatMap((f: DiffFile) => (f.old_path ? [f.path, f.old_path] : [f.path])),
                 untracked: pending.files.filter((f: DiffFile) => f.untracked).map((f: DiffFile) => f.path),
               })
               setPending(null)

@@ -65,7 +65,17 @@ func (d *grove) handleLines(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := fileAt(root, file, spec, q.Get("side") == "before")
+	// the before side of a renamed file is under its OLD name — under the new
+	// one there is nothing at that revision, and its lines go uncoloured
+	before := q.Get("side") == "before"
+	if old := q.Get("old"); before && old != "" {
+		if !safeRepoPath(old) {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("path must stay inside the checkout"))
+			return
+		}
+		file = old
+	}
+	body, err := fileAt(root, file, spec, before)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, err)
 		return

@@ -36,10 +36,14 @@ export const api = {
     file: string,
     untracked?: boolean,
     ig: Ignoring = {},
+    // a renamed file's old name: git pairs it with its old self only when asked
+    // about both, and shows a new file otherwise
+    old?: string,
   ): Promise<{ diff: string; total: number; truncated?: boolean }> =>
     fetch(
       `api/diff?name=${encodeURIComponent(name)}&repo=${encodeURIComponent(repo)}&scope=${encodeURIComponent(scope)}` +
         `&file=${encodeURIComponent(file)}${untracked ? '&untracked=1' : ''}` +
+        (old ? `&old=${encodeURIComponent(old)}` : '') +
         ignoreQuery(ig),
     ).then((r) => j<{ diff: string; total: number; truncated?: boolean }>(r)),
   // the one write: unstage or discard, on paths the caller can see
@@ -63,10 +67,12 @@ export const api = {
     scope: string,
     file: string,
     side: 'before' | 'after',
+    old?: string, // the before side of a renamed file is under its old name
   ): Promise<{ lines: string[]; total: number }> =>
     fetch(
       `api/lines?name=${encodeURIComponent(name)}&repo=${encodeURIComponent(repo)}&scope=${encodeURIComponent(scope)}` +
-        `&file=${encodeURIComponent(file)}&from=1&to=0&side=${side}`,
+        `&file=${encodeURIComponent(file)}&from=1&to=0&side=${side}` +
+        (old ? `&old=${encodeURIComponent(old)}` : ''),
     ).then((r) => j<{ lines: string[]; total: number }>(r)),
   // the hunk expanders: the unchanged lines a diff leaves out, read at the
   // scope's own revision

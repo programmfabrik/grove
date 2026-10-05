@@ -61,6 +61,9 @@ export type DiffFile = {
   path: string
   status: string
   origin: DiffOrigin
+  // where a renamed or copied file came from — without it a rename reads as a
+  // file written from scratch
+  old_path?: string
   // a gitlink: not a file but a whole repository, sitting on a different
   // commit than this one records
   submodule?: boolean

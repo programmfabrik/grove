@@ -118,7 +118,7 @@ func TestIgnoreWhitespaceDropsAWhitespaceOnlyFile(t *testing.T) {
 	}
 
 	// and the diff text of the one that is left is its real change alone
-	text, _, err := fileDiff(repo, "spaced.txt", false, scopeSpec{kind: "unstaged"}, ignoring{whitespace: true})
+	text, _, err := fileDiff(repo, "spaced.txt", false, scopeSpec{kind: "unstaged"}, ignoring{whitespace: true}, "")
 	if err != nil {
 		t.Fatal(err)
 	}

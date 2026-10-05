@@ -628,7 +628,15 @@ export function DiffTab({
                   className={`od od-${f.merged ? 'merged' : f.origin === 'branch' ? 'branch' : 'working'}`}
                   title={f.merged ? originLabel.merged : originLabel[f.origin] ?? f.origin}
                 />
-                <span className="fs-path mono">{f.path}</span>
+                <span className="fs-path mono">
+                  {f.old_path ? (
+                    <>
+                      <span className="dim">{f.old_path}</span> → {f.path}
+                    </>
+                  ) : (
+                    f.path
+                  )}
+                </span>
                 {isMarkdown(f.path) && (
                   <span className="seg seg-mini" onClick={(e) => e.stopPropagation()}>
                     <button className={rendered(k) ? '' : 'active'} onClick={() => setRendered(k, false)}>
