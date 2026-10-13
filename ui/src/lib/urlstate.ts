@@ -5,11 +5,11 @@
 // panes read their opening values from it once at mount. Nobody merges, so no
 // two writers can race a half-updated fragment into place.
 //
-//   #repo=myrepo&wt=myrepo3&sub=myrepo&scope=base&file=cmd/main.go
+//   #repo=myrepo&wt=/src/myrepo3&sub=myrepo&scope=base&file=cmd/main.go
 
 export type UrlState = {
   repo?: string // repository NAME, not its path — shorter and stable
-  wt?: string // worktree (checkout) name
+  wt?: string // worktree (checkout) id — its path, since folder names repeat
   sub?: string // sub-repo inside the checkout
   scope?: string
   file?: string

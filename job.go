@@ -128,7 +128,7 @@ func (d *grove) handleRun(w http.ResponseWriter, r *http.Request) {
 	}
 	c, ok := d.checkout(req.Name)
 	if !ok {
-		writeErr(w, http.StatusNotFound, fmt.Errorf("no checkout named %q", req.Name))
+		writeErr(w, http.StatusNotFound, fmt.Errorf("no checkout at %q", req.Name))
 		return
 	}
 	id, job := d.jobs.start()

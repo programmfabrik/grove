@@ -21,11 +21,11 @@ export function WorktreeList({
 }: {
   checkouts: Checkout[]
   base: string
-  sel: string
+  sel: string // the selected checkout's id
   terms: string[]
   checks?: Record<string, Checks>
-  onPick: (name: string) => void
-  onChecks: (name: string) => void
+  onPick: (id: string) => void
+  onChecks: (id: string) => void
 }) {
   const box = useScrollToActive('.wl-active', sel)
   const [menu, setMenu] = useState<RowMenuState | null>(null)
@@ -34,14 +34,14 @@ export function WorktreeList({
       {menu && <RowMenu menu={menu} onClose={() => setMenu(null)} />}
       {checkouts.map((c) => (
         <div
-          key={c.name}
-          className={`wl-row${c.name === sel ? ' wl-active' : ''}`}
-          onClick={() => onPick(c.name)}
+          key={c.id}
+          className={`wl-row${c.id === sel ? ' wl-active' : ''}`}
+          onClick={() => onPick(c.id)}
           onContextMenu={onRowMenu(setMenu, {
             label: c.name,
             // a fresh window on this worktree, not on whatever file the
             // current one happens to be reading in another one
-            view: where({ wt: c.name, sub: undefined, scope: undefined, file: undefined }),
+            view: where({ wt: c.id, sub: undefined, scope: undefined, file: undefined }),
             title: c.name,
           })}
           title={c.path}
@@ -79,10 +79,10 @@ export function WorktreeList({
             {/* the branch takes the colour, because the state is about the
                 branch: a coloured dot on its own says a state exists without
                 saying whose */}
-            <span className={'wl-branch dim' + checkClass(checks?.[c.name], c.head.hash)} title={c.branch}>
+            <span className={'wl-branch dim' + checkClass(checks?.[c.id], c.head.hash)} title={c.branch}>
               <Hits text={c.detached ? 'detached' : c.branch} terms={terms} />
             </span>
-            <ChecksLine checks={checks?.[c.name]} head={c.head.hash} onOpen={() => onChecks(c.name)} />
+            <ChecksLine checks={checks?.[c.id]} head={c.head.hash} onOpen={() => onChecks(c.id)} />
           </div>
         </div>
       ))}

@@ -8,7 +8,11 @@ export type Commit = {
 }
 
 export type Checkout = {
-  name: string
+  // what every request names it by: its path. Not the name, which repeats —
+  // the worktrees of a submodule's own clone each sit in a folder named after
+  // the submodule
+  id: string
+  name: string // the folder's name: what is shown
   path: string
   is_main: boolean
   branch: string

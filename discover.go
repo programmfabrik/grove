@@ -26,7 +26,12 @@ type Commit struct {
 
 // Checkout is one git worktree of a repository, the main checkout included.
 type Checkout struct {
-	Name     string `json:"name"` // directory base name, the stable key
+	// ID is what every request names a checkout by: its path. Not the name —
+	// the worktrees of a submodule's own clone each sit in a folder named after
+	// the submodule, so one repository can have six checkouts all called
+	// easydb-webfrontend, and a key they share selects all six at once.
+	ID       string `json:"id"`
+	Name     string `json:"name"` // directory base name: what is shown, and not unique
 	Path     string `json:"path"`
 	Repo     string `json:"repo"` // the repository this is a worktree of
 	IsMain   bool   `json:"is_main"`
@@ -156,6 +161,7 @@ func leadingInt(s string) (n, end int) {
 
 func scanCheckout(ctx context.Context, repo, path, base, baseTree string) Checkout {
 	c := Checkout{
+		ID:     path,
 		Name:   filepath.Base(path),
 		Path:   path,
 		Repo:   filepath.Base(repo),

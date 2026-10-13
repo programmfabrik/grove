@@ -64,7 +64,7 @@ export function DiffTab({
 }) {
   const wanted = useRef(readUrl())
   const [repos, setRepos] = useState<ScopeRepo[] | null>(null)
-  const [sel, setSel] = useState<{ name: string; repo: string; scope: string } | null>(null)
+  const [sel, setSel] = useState<{ id: string; repo: string; scope: string } | null>(null)
   const [files, setFiles] = useState<DiffFile[] | null>(null)
   const [picked, setPicked] = useState<string[]>([])
   const [anchor, setAnchor] = useState<string>('')
@@ -138,13 +138,13 @@ export function DiffTab({
   // does not have selected: nothing failed, the answers simply landed out of
   // order. Kept in a ref rather than a dependency because the point is to read
   // it at the END, after the await, not to capture it at the start.
-  const showing = useRef(c.name)
-  showing.current = c.name
+  const showing = useRef(c.id)
+  showing.current = c.id
 
   const loadScopes = useCallback(
     async (initial: boolean) => {
-      const r = await api.scopes(c.name)
-      if (showing.current !== c.name) return // answered for a checkout since left
+      const r = await api.scopes(c.id)
+      if (showing.current !== c.id) return // answered for a checkout since left
       setRepos(r.repos)
       if (!initial) return
       const askedSub = wanted.current.sub
@@ -154,10 +154,10 @@ export function DiffTab({
       const askedId = wanted.current.scope
       const askedScope = askedId ? want.scopes.find((s) => s.id === askedId) : undefined
       const first = askedScope ?? want.scopes.find((s) => s.files > 0) ?? want.scopes[0]
-      setSel({ name: c.name, repo: want.name, scope: first.id })
+      setSel({ id: c.id, repo: want.name, scope: first.id })
       wanted.current = { ...wanted.current, sub: undefined, scope: undefined }
     },
-    [c.name, repo],
+    [c.id, repo],
   )
 
   useEffect(() => {
@@ -179,9 +179,9 @@ export function DiffTab({
   }, [loadScopes])
 
   const loadFiles = useCallback(async () => {
-    if (!sel || sel.name !== c.name) return // a stale scope from the row before
-    const r = await api.diffFiles(c.name, sel.repo, sel.scope, ignoring)
-    if (showing.current !== c.name) return // and one that was current when asked
+    if (!sel || sel.id !== c.id) return // a stale scope from the row before
+    const r = await api.diffFiles(c.id, sel.repo, sel.scope, ignoring)
+    if (showing.current !== c.id) return // and one that was current when asked
     const all = r.files || []
     setFiles((prev) => (sameFiles(prev, all) ? prev : all))
     setPicked((prev) => {
@@ -205,7 +205,7 @@ export function DiffTab({
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `reverted` is a
     // trigger, not an input: a revert changed the tree this list describes
-  }, [c.name, sel, ignoring, reverted, unmergedOnly])
+  }, [c.id, sel, ignoring, reverted, unmergedOnly])
 
   useEffect(() => {
     let cancelled = false
@@ -245,7 +245,7 @@ export function DiffTab({
   // button puts them back.
   const landed = useMemo(() => (files || []).filter((f) => f.merged).length, [files])
   const [showLanded, setShowLanded] = useState(false)
-  useEffect(() => setShowLanded(false), [c.name, sel?.repo, sel?.scope])
+  useEffect(() => setShowLanded(false), [c.id, sel?.repo, sel?.scope])
   const hideLanded = landed > 0 && !showLanded
 
   // "unmerged only" reaches the tree too: a committed file whose change the
@@ -312,13 +312,13 @@ export function DiffTab({
   const pickedSet = useMemo(() => new Set(picked), [picked])
   // A file can only be read at the scope it was listed in, and `sel` belongs to
   // the checkout it was chosen in. For one render after switching checkouts it
-  // is still the OLD one while c.name is already the new — and that is long
-  // enough, because the viewer below is handed c.name and sel.scope together.
+  // is still the OLD one while c.id is already the new — and that is long
+  // enough, because the viewer below is handed c.id and sel.scope together.
   // A file that exists in both checkouts stays picked across the switch, so it
   // gets asked for as "this checkout, at that checkout's scope": a 400, and an
   // error box that outlives the render that caused it. loadFiles has always
   // guarded this pairing; the render never did.
-  const ready = !!sel && sel.name === c.name
+  const ready = !!sel && sel.id === c.id
   const selected = useMemo(
     () => (ready ? (files || []).filter((f) => pickedSet.has(key(f))) : []),
     [ready, files, pickedSet],
@@ -477,7 +477,7 @@ export function DiffTab({
                 sel={sel}
                 unmergedOnly={unmergedOnly}
                 terms={scopeTerms}
-                onPick={(r, s) => setSel({ name: c.name, repo: r, scope: s })}
+                onPick={(r, s) => setSel({ id: c.id, repo: r, scope: s })}
               />
             </div>
           </div>
@@ -655,10 +655,10 @@ export function DiffTab({
               {open && sel && (
                 <div className={single ? '' : 'fs-body'}>
                   {isMarkdown(f.path) && rendered(k) ? (
-                    <Markdown name={c.name} repo={sel.repo} scope={sel.scope} file={f} poll={poll} />
+                    <Markdown name={c.id} repo={sel.repo} scope={sel.scope} file={f} poll={poll} />
                   ) : (
                     <FileDiff
-                      name={c.name}
+                      name={c.id}
                       repo={sel.repo}
                       scope={sel.scope}
                       file={f}

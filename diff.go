@@ -233,7 +233,7 @@ func (d *grove) handleDiff(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	c, ok := d.checkout(q.Get("name"))
 	if !ok {
-		writeErr(w, http.StatusNotFound, fmt.Errorf("no checkout named %q", q.Get("name")))
+		writeErr(w, http.StatusNotFound, fmt.Errorf("no checkout at %q", q.Get("name")))
 		return
 	}
 	want := q.Get("repo")

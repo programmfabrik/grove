@@ -14,6 +14,8 @@ export type Ignoring = { comments?: boolean; whitespace?: boolean }
 const ignoreQuery = (ig: Ignoring) =>
   (ig.comments ? '&ignore_comments=1' : '') + (ig.whitespace ? '&ignore_whitespace=1' : '')
 
+// Every call about one checkout names it by its id (Checkout.id, its path), in
+// a parameter that is still called name.
 export const api = {
   repos: (): Promise<{ dir: string; repos: Repo[] }> =>
     fetch('api/repos').then((r) => j<{ dir: string; repos: Repo[] }>(r)),

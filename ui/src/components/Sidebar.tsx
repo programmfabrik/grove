@@ -74,7 +74,7 @@ export function Sidebar({
             <button
               className="btn-ghost"
               title="Open this checkout in your terminal"
-              onClick={() => api.launch({ kind: 'terminal', name: c.name }).catch(() => {})}
+              onClick={() => api.launch({ kind: 'terminal', name: c.id }).catch(() => {})}
             >
               Terminal
             </button>
@@ -83,12 +83,12 @@ export function Sidebar({
             <button
               className="btn-ghost"
               title="Open this checkout in your editor"
-              onClick={() => api.launch({ kind: 'editor', name: c.name }).catch(() => {})}
+              onClick={() => api.launch({ kind: 'editor', name: c.id }).catch(() => {})}
             >
               Editor
             </button>
           )}
-          <RemoteBar name={c.name} onChanged={() => setReverted((n) => n + 1)} />
+          <RemoteBar name={c.id} onChanged={() => setReverted((n) => n + 1)} />
         </div>
       </div>
 
@@ -109,7 +109,7 @@ export function Sidebar({
             editor
               ? (f) =>
                   api
-                    .launch({ kind: 'editor', name: c.name, repo: menu.repo, file: f.path })
+                    .launch({ kind: 'editor', name: c.id, repo: menu.repo, file: f.path })
                     .catch(() => {})
               : undefined
           }
@@ -131,7 +131,7 @@ export function Sidebar({
             setBusy(true)
             try {
               await api.revert({
-                name: c.name,
+                name: c.id,
                 repo: pending.repo,
                 action: pending.action,
                 // a rename is two paths in the index, the old one gone and

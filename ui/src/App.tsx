@@ -149,9 +149,14 @@ export default function App() {
   useEffect(() => {
     if (!wantMain.current || !state?.checkouts.length) return
     wantMain.current = false
-    const askedName = wanted.current.wt
-    const asked = askedName ? state.checkouts.find((c) => c.name === askedName) : undefined
-    setCheckout((asked ?? state.checkouts.find((c) => c.is_main) ?? state.checkouts[0]).name)
+    // a link names the worktree by its id; one written before ids were paths
+    // names it by its folder, which still finds it when the folder is unique
+    const askedFor = wanted.current.wt
+    const asked = askedFor
+      ? state.checkouts.find((c) => c.id === askedFor) ??
+        state.checkouts.find((c) => c.name === askedFor && !state.checkouts.some((o) => o !== c && o.name === c.name))
+      : undefined
+    setCheckout((asked ?? state.checkouts.find((c) => c.is_main) ?? state.checkouts[0]).id)
     setDiffRepo(undefined)
     wanted.current = { ...wanted.current, wt: undefined } // consumed
   }, [state])
@@ -168,6 +173,16 @@ export default function App() {
   // what each checkout's checks were last time, so a run that FINISHES can be
   // told from one that was already finished when grove started looking
   const wasChecking = useRef<Record<string, string>>({})
+  // what a notification calls a checkout: its folder's name, and its branch
+  // too when the folder's name is not enough to tell which one finished
+  const known = useRef<Checkout[]>([])
+  known.current = state?.checkouts ?? []
+  const callIt = (id: string) => {
+    const c = known.current.find((x) => x.id === id)
+    if (!c) return id.split(/[\\/]/).pop() || id
+    const twin = known.current.some((x) => x !== c && x.name === c.name)
+    return twin && c.branch ? `${c.name} (${c.branch})` : c.name
+  }
   useEffect(() => {
     if (!repo) return
     let stop = false
@@ -177,19 +192,19 @@ export default function App() {
         .then((r) => {
           if (stop) return
           const now = r.checks || {}
-          for (const [name, c] of Object.entries(now)) {
-            const before = wasChecking.current[name]
+          for (const [id, c] of Object.entries(now)) {
+            const before = wasChecking.current[id]
             // only the transition, and only once: a green branch says green on
             // its own, and being told about it every thirty seconds is not news
             if (before === 'pending' && (c.state === 'success' || c.state === 'failure')) {
               api
                 .notify(
-                  `${name}: checks ${c.state === 'success' ? 'passed' : 'failed'}`,
+                  `${callIt(id)}: checks ${c.state === 'success' ? 'passed' : 'failed'}`,
                   `${c.total} check${c.total === 1 ? '' : 's'} on ${c.sha?.slice(0, 8) ?? 'the pushed commit'}`,
                 )
                 .catch(() => {})
             }
-            wasChecking.current[name] = c.state
+            wasChecking.current[id] = c.state
           }
           setChecks(now)
           setChecksProblem(r.problem ?? null)
@@ -221,7 +236,7 @@ export default function App() {
     [repos, repoTerms],
   )
 
-  const current: Checkout | undefined = checkouts.find((c) => c.name === checkout)
+  const current: Checkout | undefined = checkouts.find((c) => c.id === checkout)
 
   // the fragment mirrors the view: repo, worktree, and what the viewer shows
   const repoName = repos?.find((r) => r.path === repo)?.name
@@ -262,9 +277,9 @@ export default function App() {
 
       {showChecks && checks[showChecks] && (
         <ChecksDialog
-          name={showChecks}
+          name={checkouts.find((c) => c.id === showChecks)?.name ?? ''}
           checks={checks[showChecks]}
-          head={checkouts.find((c) => c.name === showChecks)?.head.hash ?? ''}
+          head={checkouts.find((c) => c.id === showChecks)?.head.hash ?? ''}
           desktop={!!update?.desktop}
           onClose={() => setShowChecks(null)}
         />

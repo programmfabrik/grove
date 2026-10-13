@@ -294,7 +294,7 @@ func commitScopes(root, base string) []Scope {
 func (d *grove) handleScopes(w http.ResponseWriter, r *http.Request) {
 	c, ok := d.checkout(r.URL.Query().Get("name"))
 	if !ok {
-		writeErr(w, http.StatusNotFound, fmt.Errorf("no checkout named %q", r.URL.Query().Get("name")))
+		writeErr(w, http.StatusNotFound, fmt.Errorf("no checkout at %q", r.URL.Query().Get("name")))
 		return
 	}
 	repos := []ScopeRepo{}

@@ -100,14 +100,15 @@ func TestDiscardAnOrdinaryFileWithoutSubmodules(t *testing.T) {
 }
 
 // discardVia goes through handleRevert, so what is under test is the command
-// grove builds rather than one the test wrote out for it.
+// grove builds rather than one the test wrote out for it. checkout is the
+// folder's name under dir; the request names it by path, as the UI does.
 func discardVia(t testing.TB, dir, checkout string, paths ...string) {
 	t.Helper()
 	d := &grove{
 		opt:   options{dir: normPath(dir), refresh: time.Minute},
 		state: map[string]*repoState{},
 	}
-	body, err := json.Marshal(revertRequest{Name: checkout, Action: "discard", Paths: paths})
+	body, err := json.Marshal(revertRequest{Name: normPath(filepath.Join(dir, checkout)), Action: "discard", Paths: paths})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +249,7 @@ func TestDiscardWillNotWriteOverWorkInsideASubmodule(t *testing.T) {
 	write(t, sub, "a.txt", "PRECIOUS\n") // uncommitted, inside the submodule
 
 	d := &grove{opt: options{dir: normPath(dir), refresh: time.Minute}, state: map[string]*repoState{}}
-	body, _ := json.Marshal(revertRequest{Name: "parent", Action: "discard", Paths: []string{"resources/lib"}})
+	body, _ := json.Marshal(revertRequest{Name: normPath(parent), Action: "discard", Paths: []string{"resources/lib"}})
 	w := httptest.NewRecorder()
 	d.handleRevert(w, httptest.NewRequest(http.MethodPost, "/api/revert", bytes.NewReader(body)))
 

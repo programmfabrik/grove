@@ -432,7 +432,7 @@ func combine(total int, runs []CheckRun) Checks {
 }
 
 // handleChecks answers with what GitHub says about each checkout of one
-// repository, keyed by checkout name.
+// repository, keyed by checkout ID.
 //
 // It asks about the commit the REMOTE has, not the one on disk: "is what I
 // pushed being tested" is the question, and a local commit nobody has seen is
@@ -529,7 +529,7 @@ func (d *grove) handleChecks(w http.ResponseWriter, r *http.Request) {
 	d.mu.RUnlock()
 
 	type answer struct {
-		name    string
+		id      string
 		checks  Checks
 		problem *checksProblem
 	}
@@ -554,7 +554,7 @@ func (d *grove) handleChecks(w http.ResponseWriter, r *http.Request) {
 		go func(checkout, sha string) {
 			checks, problem := d.checks.get(r.Context(), owner, name, sha)
 			ch <- answer{checkout, checks, problem}
-		}(c.Name, sha)
+		}(c.ID, sha)
 	}
 	out := map[string]Checks{}
 	var worst *checksProblem
@@ -564,7 +564,7 @@ func (d *grove) handleChecks(w http.ResponseWriter, r *http.Request) {
 			worst = a.problem
 		}
 		if a.checks.State != "" {
-			out[a.name] = a.checks
+			out[a.id] = a.checks
 		}
 	}
 	res := map[string]any{"checks": out}

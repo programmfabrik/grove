@@ -91,7 +91,7 @@ func repoOf(checkout string) string {
 func (d *grove) handleRemote(w http.ResponseWriter, r *http.Request) {
 	c, ok := d.checkout(r.URL.Query().Get("name"))
 	if !ok {
-		writeErr(w, http.StatusNotFound, fmt.Errorf("no checkout named %q", r.URL.Query().Get("name")))
+		writeErr(w, http.StatusNotFound, fmt.Errorf("no checkout at %q", r.URL.Query().Get("name")))
 		return
 	}
 	writeJSON(w, http.StatusOK, remoteState{
@@ -556,7 +556,7 @@ func (d *grove) handleRemoteAction(w http.ResponseWriter, r *http.Request) {
 	}
 	c, ok := d.checkout(req.Name)
 	if !ok {
-		writeErr(w, http.StatusNotFound, fmt.Errorf("no checkout named %q", req.Name))
+		writeErr(w, http.StatusNotFound, fmt.Errorf("no checkout at %q", req.Name))
 		return
 	}
 	want := map[string]bool{}

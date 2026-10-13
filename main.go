@@ -335,17 +335,20 @@ func (d *grove) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	d.handleState(w, r)
 }
 
-// checkout finds a worktree by name. Names are the directory basename, unique
-// enough in practice, and the caller (a diff, a revert) always names one it
-// just saw.
+// checkout finds a worktree by its ID, which is its path. Not by name: names
+// repeat (see Checkout.ID), and a lookup that takes the first of six
+// same-named checkouts answers for the wrong one without a word.
 //
 // The scanned repos are only what somebody has looked at, so a cold cache is
 // normal: a deep link opens straight into a diff, and its request can arrive
 // before — or instead of — the /api/state that would have scanned the repo.
-// Rather than 404 in that race, find which repo owns the name and scan that
+// Rather than 404 in that race, find which repo owns the path and scan that
 // one. `git worktree list` per repo is one cheap call, and only on a miss.
-func (d *grove) checkout(name string) (Checkout, bool) {
-	if c, ok := d.cachedCheckout(name); ok {
+func (d *grove) checkout(id string) (Checkout, bool) {
+	if id == "" {
+		return Checkout{}, false
+	}
+	if c, ok := d.cachedCheckout(id); ok {
 		return c, true
 	}
 	for _, r := range d.reposList(context.Background()) {
@@ -355,22 +358,22 @@ func (d *grove) checkout(name string) (Checkout, bool) {
 		}
 		for _, line := range strings.Split(out, "\n") {
 			p, ok := strings.CutPrefix(line, "worktree ")
-			if !ok || filepath.Base(normPath(p)) != name {
+			if !ok || normPath(p) != id {
 				continue
 			}
 			d.repoStateFor(context.Background(), r.Path)
-			return d.cachedCheckout(name)
+			return d.cachedCheckout(id)
 		}
 	}
 	return Checkout{}, false
 }
 
-func (d *grove) cachedCheckout(name string) (Checkout, bool) {
+func (d *grove) cachedCheckout(id string) (Checkout, bool) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	for _, st := range d.state {
 		for _, c := range st.checkouts {
-			if c.Name == name {
+			if c.ID == id {
 				return c, true
 			}
 		}

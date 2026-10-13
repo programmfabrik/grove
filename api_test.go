@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,11 +79,14 @@ func TestAPIOverARealRepo(t *testing.T) {
 		t.Errorf("dirty = %d, want 3", state.Checkouts[0].Dirty)
 	}
 
+	// every request names the checkout by its ID, which is its path
+	name := url.QueryEscape(state.Checkouts[0].ID)
+
 	var scopes struct {
 		Name  string      `json:"name"`
 		Repos []ScopeRepo `json:"repos"`
 	}
-	get("/api/scopes?name=myrepo", &scopes)
+	get("/api/scopes?name="+name, &scopes)
 	if len(scopes.Repos) != 1 {
 		t.Fatalf("/api/scopes = %+v, want one repo section", scopes.Repos)
 	}
@@ -102,7 +106,7 @@ func TestAPIOverARealRepo(t *testing.T) {
 	var files struct {
 		Files []DiffFile `json:"files"`
 	}
-	get("/api/diff?name=myrepo&repo=myrepo&scope=unstaged", &files)
+	get("/api/diff?name="+name+"&repo=myrepo&scope=unstaged", &files)
 	byPath := map[string]DiffFile{}
 	for _, f := range files.Files {
 		byPath[f.Path] = f
@@ -122,13 +126,13 @@ func TestAPIOverARealRepo(t *testing.T) {
 	var one struct {
 		Diff string `json:"diff"`
 	}
-	get("/api/diff?name=myrepo&repo=myrepo&scope=unstaged&file=untracked.txt&untracked=1", &one)
+	get("/api/diff?name="+name+"&repo=myrepo&scope=unstaged&file=untracked.txt&untracked=1", &one)
 	if !strings.Contains(one.Diff, "+u1") || !strings.Contains(one.Diff, "+u2") {
 		t.Errorf("untracked diff did not come out as additions:\n%s", one.Diff)
 	}
 
 	// and a tracked file's diff, at the same scope
-	get("/api/diff?name=myrepo&repo=myrepo&scope=unstaged&file=committed.txt", &one)
+	get("/api/diff?name="+name+"&repo=myrepo&scope=unstaged&file=committed.txt", &one)
 	if !strings.Contains(one.Diff, "-three") || !strings.Contains(one.Diff, "+CHANGED") {
 		t.Errorf("unstaged diff of committed.txt is wrong:\n%s", one.Diff)
 	}
@@ -137,17 +141,17 @@ func TestAPIOverARealRepo(t *testing.T) {
 	var lines struct {
 		Lines []string `json:"lines"`
 	}
-	get("/api/lines?name=myrepo&repo=myrepo&scope=unstaged&file=committed.txt&side=after", &lines)
+	get("/api/lines?name="+name+"&repo=myrepo&scope=unstaged&file=committed.txt&side=after", &lines)
 	if strings.Join(lines.Lines, "\n") != "one\ntwo\nCHANGED" {
 		t.Errorf("/api/lines after = %q, want the working tree", lines.Lines)
 	}
-	get("/api/lines?name=myrepo&repo=myrepo&scope=unstaged&file=committed.txt&side=before", &lines)
+	get("/api/lines?name="+name+"&repo=myrepo&scope=unstaged&file=committed.txt&side=before", &lines)
 	if strings.Join(lines.Lines, "\n") != "one\ntwo\nthree" {
 		t.Errorf("/api/lines before = %q, want the index", lines.Lines)
 	}
 	// both sides that resolve to the index: git spells it ":path", and joining
 	// a revision of ":" to the path with another colon does not
-	get("/api/lines?name=myrepo&repo=myrepo&scope=staged&file=staged.txt&side=after", &lines)
+	get("/api/lines?name="+name+"&repo=myrepo&scope=staged&file=staged.txt&side=after", &lines)
 	if strings.Join(lines.Lines, "\n") != "s" {
 		t.Errorf("/api/lines staged after = %q, want the staged blob", lines.Lines)
 	}
