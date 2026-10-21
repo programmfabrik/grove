@@ -365,7 +365,13 @@ func scopeFileList(root string, spec scopeSpec, ignore ignoring) ([]DiffFile, er
 		slices.SortFunc(files, func(a, b DiffFile) int { return strings.Compare(a.Path, b.Path) })
 		return files, nil
 	case "commit":
-		return nameStatus(root, "branch", ignore, "show", "--format=", "--name-status", spec.sha)
+		// Against the FIRST parent, not `git show`. For a merge, show prints a
+		// combined diff: only the files that differ from every parent, the few
+		// the merge had to reconcile. A merge that brought a thousand commits
+		// into main listed 15 files and counted none of the 11,000 it added.
+		// What a merge did to its branch is its first-parent diff, and for any
+		// other commit the two are the same thing.
+		return nameStatus(root, "branch", ignore, "diff", "--name-status", spec.from, spec.sha)
 	}
 	return nil, fmt.Errorf("unknown scope kind %q", spec.kind)
 }
@@ -721,7 +727,7 @@ func fileDiff(root, path string, untracked bool, spec scopeSpec, ignore ignoring
 		case spec.kind == "unstaged":
 			args = []string{"diff"}
 		case spec.kind == "commit":
-			args = []string{"show", "--format=", spec.sha}
+			args = []string{"diff", spec.from, spec.sha} // see scopeFileList
 		default:
 			args = []string{"diff", spec.from}
 		}

@@ -245,8 +245,18 @@ func commitScopes(root, base string) []Scope {
 	// The message body is multi-line, so it cannot share the line-based
 	// numstat parsing: %x1e closes the header fields and everything after it
 	// in the block is numstat.
-	out, err := git(root, "log", "-n", strconv.Itoa(commitScopeLimit),
-		"--numstat", "--date=format:%Y-%m-%d %H:%M", "--format=%x00%H%x1f%s%x1f%ad%x1f%an%x1f%b%x1e")
+	//
+	// A merge is counted against its first parent, which is what it brought
+	// into the branch — the same diff its scope shows. Without the flag git
+	// gives a merge no stats at all, and a merge carrying 750,000 lines into
+	// main sat in the list as an empty row. The flag is git 2.31; an older git
+	// gets the list without a merge's counts rather than no list.
+	logArgs := []string{"log", "-n", strconv.Itoa(commitScopeLimit),
+		"--numstat", "--date=format:%Y-%m-%d %H:%M", "--format=%x00%H%x1f%s%x1f%ad%x1f%an%x1f%b%x1e"}
+	out, err := git(root, append(logArgs, "--diff-merges=first-parent")...)
+	if err != nil {
+		out, err = git(root, logArgs...)
+	}
 	if err != nil {
 		return nil
 	}
