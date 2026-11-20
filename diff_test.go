@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -127,40 +128,50 @@ func TestIgnoreWhitespaceDropsAWhitespaceOnlyFile(t *testing.T) {
 	}
 }
 
-// A file added on the branch and deleted again is in no numstat at all — there
-// is nothing between the fork point and the tree — so "missing from the stats"
-// cannot by itself mean "nothing survives what is being ignored". It used to,
-// and switching on ANY ignore made such files vanish for a reason that had
-// nothing to do with the flag: 27 of them in one checkout.
-func TestIgnoringKeepsAFileThatWasNeverInTheStats(t *testing.T) {
+// A file the branch touched and the working tree put back is not a change:
+// between the fork point and the tree there is nothing, and a row for it had
+// no counts and an empty diff — fylr.default.yml, five lines added in a commit
+// and taken out again uncommitted. Nor does it depend on what is ignored: it
+// once vanished only when a flag was on, 27 files at a time, for a reason that
+// had nothing to do with the flag. Absent either way, and every real
+// difference without a line in it — a mode, a binary, an untracked file —
+// still listed.
+func TestAFileChangedAndChangedBackIsNotAChange(t *testing.T) {
 	requireGit(t)
 	repo := initRepo(t, filepath.Join(t.TempDir(), "r"))
+	write(t, repo, "kept.yml", "a: 1\n")
+	write(t, repo, "run.sh", "echo\n")
+	write(t, repo, "blob.bin", "\x00\x01")
+	gitRun(t, repo, "add", ".")
+	gitRun(t, repo, "commit", "-q", "-m", "files")
 	base, _ := git(repo, "rev-parse", "HEAD")
 	gitRun(t, repo, "checkout", "-q", "-b", "work")
 	write(t, repo, "added.txt", "on the branch\n")
-	gitRun(t, repo, "add", "added.txt")
-	gitRun(t, repo, "commit", "-q", "-m", "add it")
-	gitRun(t, repo, "rm", "-q", "added.txt") // and take it out again, staged
+	write(t, repo, "kept.yml", "a: 1\nb: 2\n")
+	gitRun(t, repo, "add", ".")
+	gitRun(t, repo, "commit", "-q", "-m", "add them")
+	gitRun(t, repo, "rm", "-q", "added.txt") // taken out again, staged
+	write(t, repo, "kept.yml", "a: 1\n")     // put back, unstaged
+	// a mode, no lines: on disk, and in the index for a git that does not
+	// read modes from disk (core.filemode is off on Windows)
+	if err := os.Chmod(filepath.Join(repo, "run.sh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, repo, "update-index", "--chmod=+x", "run.sh")
+	write(t, repo, "blob.bin", "\x00\x02")   // a binary, no lines
+	write(t, repo, "new.txt", "untracked\n") // in no diff at all
 
-	listed := func(ig ignoring) bool {
-		t.Helper()
+	for _, ig := range []ignoring{{}, {whitespace: true}, {comments: true}} {
 		files, err := scopeFiles(repo, scopeSpec{kind: "range", from: base}, ig)
 		if err != nil {
 			t.Fatal(err)
 		}
+		var got []string
 		for _, f := range files {
-			if f.Path == "added.txt" {
-				return true
-			}
+			got = append(got, f.Path)
 		}
-		return false
-	}
-	if !listed(ignoring{}) {
-		t.Fatal("added.txt is not listed even with nothing ignored — bad fixture")
-	}
-	for _, ig := range []ignoring{{whitespace: true}, {comments: true}} {
-		if !listed(ig) {
-			t.Errorf("%+v: added.txt disappeared, but nothing about it is being ignored", ig)
+		if want := "blob.bin new.txt run.sh"; strings.Join(got, " ") != want {
+			t.Errorf("%+v: listed %v, want %s", ig, got, want)
 		}
 	}
 }

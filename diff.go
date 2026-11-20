@@ -503,20 +503,27 @@ func changedFiles(root, forkPoint string, ignore ignoring) ([]DiffFile, error) {
 	}
 	slices.Sort(order)
 
-	// one numstat over the whole span covers every case: a committed-only file
+	// One numstat over the whole span covers every case: a committed-only file
 	// gets its branch counts, an uncommitted-only file its working counts, and
-	// a file that is both gets the sum a reviewer actually cares about
-	stats, from := numstatFull(root, append([]string{"diff", forkPoint, "--numstat"}, ignore.args()...)...)
-	// What is in the stats without the flags, to tell "nothing survives what
-	// is being ignored" from "nothing was there to begin with": a file added
-	// on the branch and deleted again is in no numstat at all, flag or none,
-	// and used to disappear the moment ANY ignore was switched on — for a
-	// reason that had nothing to do with comments or with whitespace. A rename
-	// is a fact about the files rather than about what is ignored, so it is
-	// read from here too.
-	plain := stats
+	// a file that is both gets the sum a reviewer actually cares about.
+	//
+	// Read without the flags first: it is the list of files that differ from
+	// the fork point AT ALL. The two sources above say a file was touched, and
+	// touched is not changed — a commit adds five lines, the working tree
+	// takes them out again, and the file is main's own, byte for byte. It
+	// used to be listed anyway, with no counts and an empty diff, a row that
+	// asks "what changed?" and has no answer. Git numstats every difference
+	// there is, a mode, a binary, a submodule's dirt, so a file missing from
+	// this one has none; only an untracked file is in no diff at all. A
+	// rename is a fact about the files rather than about what is ignored, so
+	// it is read from here too.
+	plain, from, err := numstatRead(root, "diff", forkPoint, "--numstat")
+	if err != nil {
+		return nil, fmt.Errorf("git diff --numstat: %w", err)
+	}
+	stats := plain
 	if ignore.any() {
-		plain, from = numstatFull(root, "diff", forkPoint, "--numstat")
+		stats, _ = numstatFull(root, append([]string{"diff", forkPoint, "--numstat"}, ignore.args()...)...)
 	}
 	files := make([]DiffFile, 0, len(order))
 	for _, path := range order {
@@ -531,12 +538,13 @@ func changedFiles(root, forkPoint string, ignore ignoring) ([]DiffFile, error) {
 		default:
 			f.Origin, f.Status = "working", statusWord(code)
 		}
+		if _, differs := plain[path]; !differs && !f.Untracked {
+			continue // changed, and changed back
+		}
 		if s, ok := stats[path]; ok {
 			f.Added, f.Deleted = s[0], s[1]
-		} else if _, had := plain[path]; had && ignore.any() && !f.Untracked {
-			// nothing of this file survives what is being ignored (an
-			// untracked file is in no diff at all, so it is never in stats)
-			continue
+		} else if ignore.any() && !f.Untracked {
+			continue // nothing of this file survives what is being ignored
 		}
 		files = append(files, f)
 	}
@@ -631,11 +639,18 @@ func numstatArgs(root string, args ...string) map[string][2]int {
 // numstatFull is numstat keyed by the path each change ENDS at, with where the
 // renamed and copied ones came from beside it.
 func numstatFull(root string, args ...string) (map[string][2]int, map[string]string) {
+	stats, from, _ := numstatRead(root, args...)
+	return stats, from
+}
+
+// numstatRead is numstatFull for a caller that must tell "no files" from "git
+// failed": one that drops whatever is not in the answer.
+func numstatRead(root string, args ...string) (map[string][2]int, map[string]string, error) {
 	stats := map[string][2]int{}
 	from := map[string]string{}
 	out, err := git(root, args...)
 	if err != nil {
-		return stats, from
+		return stats, from, err
 	}
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Split(line, "\t")
@@ -650,7 +665,7 @@ func numstatFull(root string, args ...string) (map[string][2]int, map[string]str
 			from[path] = old
 		}
 	}
-	return stats, from
+	return stats, from, nil
 }
 
 // renamePaths reads the path column of a --numstat line. A rename is written
