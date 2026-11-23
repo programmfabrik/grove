@@ -442,11 +442,22 @@ func repoBase(root, name, dashboardBase string, primary string) string {
 // detached checkout, one sitting ON the base branch, or a base that does not
 // resolve here. The uncommitted work is then the whole diff, with nothing
 // special-cased anywhere else.
+//
+// A merge in progress counts as made. Merging the base in stages everything
+// the base gained since the fork, and measured from the old fork point all of
+// it read as this branch's uncommitted work — thousands of lines of other
+// people's commits, none of which `git diff main` shows. Given a third commit,
+// merge-base answers for a merge of HEAD and it, which is where the branch will
+// fork from the moment the merge is committed.
 func mergeBaseOf(root, base string) string {
 	if base == "" {
 		return "HEAD"
 	}
-	mb, err := git(root, "merge-base", base, "HEAD")
+	args := []string{"merge-base", base, "HEAD"}
+	if mh, err := git(root, "rev-parse", "--verify", "--quiet", "MERGE_HEAD"); err == nil && mh != "" {
+		args = append(args, mh)
+	}
+	mb, err := git(root, args...)
 	if err != nil || mb == "" {
 		return "HEAD"
 	}
